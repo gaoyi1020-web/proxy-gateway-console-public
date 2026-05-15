@@ -8,14 +8,14 @@ from agent.profile_crypto import write_encrypted_profile
 from agent.profile_schema import redacted_profile_template
 from agent.session_store import SessionStore
 from agent.unlock_server import lock, unlock, unlock_status
-from agent.usb_identity import trusted_manifest_template
+from agent.usb_identity import recovery_manifest_template
 
 
 PROFILE_PASSPHRASE = "test-passphrase"
 
 
 def make_usb(root: Path, include_profile=True):
-    (root / "manifest.json").write_text(json.dumps(trusted_manifest_template()), encoding="utf-8")
+    (root / "manifest.json").write_text(json.dumps(recovery_manifest_template()), encoding="utf-8")
     if include_profile:
         (root / "profile").mkdir()
         write_encrypted_profile(redacted_profile_template(), root / "profile" / "profile.json.enc", PROFILE_PASSPHRASE)

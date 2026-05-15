@@ -11,6 +11,8 @@ USB_MANIFEST = "manifest.json"
 USB_PROFILE = "profile/profile.json.enc"
 EXPECTED_PRODUCT = "PROXY_GATEWAY"
 SUPPORTED_VERSION = 2
+MANIFEST_MARKER_FIELD = "marker"
+LEGACY_MANIFEST_MARKER_FIELD = "trustId"
 
 
 def detect_usb(root: str | Path | None = None) -> dict[str, Any]:
@@ -63,30 +65,39 @@ def validate_usb_manifest(manifest: dict[str, Any]) -> list[str]:
         errors.append("manifest product mismatch")
     if manifest.get("version") != SUPPORTED_VERSION:
         errors.append("manifest version mismatch")
-    trust_id = manifest.get("trustId")
-    if not isinstance(trust_id, str) or len(trust_id) < 12:
-        errors.append("manifest trustId is missing or too short")
+    marker = manifest.get(MANIFEST_MARKER_FIELD) or manifest.get(LEGACY_MANIFEST_MARKER_FIELD)
+    if not isinstance(marker, str) or len(marker) < 12:
+        errors.append("manifest marker is missing or too short")
     if "secret" in manifest or "password" in manifest or "token" in manifest:
         errors.append("manifest contains secret-like fields")
     return errors
 
 
-def trusted_manifest_template() -> dict[str, Any]:
+def recovery_manifest_template() -> dict[str, Any]:
     return {
         "product": EXPECTED_PRODUCT,
         "version": SUPPORTED_VERSION,
-        "trustId": "replace-with-local-random-id",
+        MANIFEST_MARKER_FIELD: "replace-with-local-random-marker",
         "label": "Linux LAN Gateway Recovery",
-        "safetyPolicy": "manifest-without-confidential-fields",
+        "policy": "public-marker-only",
     }
 
 
 def _status(root: Path, manifest: dict[str, Any] | None, trusted: bool, state: str, errors: list[str]) -> dict[str, Any]:
+    summary = None
+    if isinstance(manifest, dict):
+        marker = manifest.get(MANIFEST_MARKER_FIELD) or manifest.get(LEGACY_MANIFEST_MARKER_FIELD)
+        summary = {
+            "product": manifest.get("product"),
+            "version": manifest.get("version"),
+            "label": manifest.get("label", ""),
+            "markerPresent": isinstance(marker, str) and bool(marker),
+        }
     return {
         "present": True,
         "trusted": trusted,
         "state": state,
         "root": str(root),
-        "manifest": manifest,
+        "manifest": summary,
         "errors": errors,
     }

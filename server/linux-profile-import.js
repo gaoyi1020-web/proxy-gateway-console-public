@@ -63,6 +63,10 @@ function parseJson(value, fallback) {
   }
 }
 
+function blockedImportResult() {
+  return { ok: false, state: "blocked", summary: "profile import failed" };
+}
+
 function redactImportResult(parsed) {
   return {
     ok: Boolean(parsed?.ok),
@@ -93,10 +97,10 @@ export async function importLinuxProfileUpload(payload = {}, options = {}) {
       timeoutMs: 8000,
       maxOutput: 64_000
     });
-    const parsed = parseJson(result.stdout, { ok: false, state: "blocked", summary: result.stderr || "profile import failed" });
+    const parsed = parseJson(result.stdout, blockedImportResult());
     return redactImportResult(parsed);
-  } catch (error) {
-    return { ok: false, state: "blocked", summary: error instanceof Error ? error.message : String(error) };
+  } catch {
+    return blockedImportResult();
   } finally {
     if (ownsTempDir) {
       await rm(tempDir, { recursive: true, force: true });

@@ -26,7 +26,7 @@ try:
     from .unlock_server import serve_unlock
     from .unlock_server import unlock as unlock_profile
     from .unlock_server import unlock_status
-    from .usb_identity import detect_usb, trusted_manifest_template
+    from .usb_identity import detect_usb, recovery_manifest_template
 except ImportError:
     from port_registry import build_session_manifest, utc_now_iso
     from health import doctor as doctor_report
@@ -42,7 +42,7 @@ except ImportError:
     from unlock_server import serve_unlock
     from unlock_server import unlock as unlock_profile
     from unlock_server import unlock_status
-    from usb_identity import detect_usb, trusted_manifest_template
+    from usb_identity import detect_usb, recovery_manifest_template
 
 
 AGENT_VERSION = 2
@@ -702,7 +702,7 @@ def main(argv: list[str] | None = None) -> int:
         print_json(result)
         return 0 if result.get("ok") else 2
     if args.command == "usb-manifest-template":
-        print_json(trusted_manifest_template())
+        print_json(recovery_manifest_template())
         return 0
     if args.command == "runtime-plan":
         print_json(build_runtime_plan(SessionStore().read_session(), None))

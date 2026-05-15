@@ -20,7 +20,7 @@ rm -rf "${APP_DIR}"
 mkdir -p "${APP_DIR}"
 
 python3 "${ROOT_DIR}/agent/gateway_agent.py" usb-manifest-template > "${USB_ROOT}/manifest.json"
-python3 -c 'import json,sys,uuid; path=sys.argv[1]; data=json.load(open(path, encoding="utf-8")); data["trustId"]=uuid.uuid4().hex; open(path, "w", encoding="utf-8").write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")' "${USB_ROOT}/manifest.json"
+python3 -c 'import json,sys,uuid; path=sys.argv[1]; data=json.load(open(path, encoding="utf-8")); data["marker"]=uuid.uuid4().hex; open(path, "w", encoding="utf-8").write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")' "${USB_ROOT}/manifest.json"
 python3 "${ROOT_DIR}/agent/gateway_agent.py" profile-template > "${PROFILE_DIR}/profile.template.json"
 
 cat > "${PROFILE_DIR}/README.md" <<'EOF'

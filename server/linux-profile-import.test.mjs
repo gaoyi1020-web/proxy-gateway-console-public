@@ -88,3 +88,18 @@ test("importLinuxProfileUpload cleans owned temp directory after import", async 
     await rm(parent, { recursive: true, force: true });
   }
 });
+
+test("importLinuxProfileUpload returns generic failure details", async () => {
+  const result = await importLinuxProfileUpload(
+    { fileName: "profile.json.enc", contentBase64: body() },
+    {
+      runner: async () => {
+        throw new Error("stack trace with /private/path");
+      }
+    }
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.summary, "profile import failed");
+  assert.doesNotMatch(JSON.stringify(result), /private\/path|stack trace/);
+});
