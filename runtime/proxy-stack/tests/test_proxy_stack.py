@@ -752,7 +752,6 @@ class LanGatewayTests(unittest.TestCase):
         self.assertEqual(result["interface"], "wlp0s20f3")
         self.assertEqual(result["gateway"], "10.10.0.1")
         self.assertEqual(result["client_ip"], "10.10.0.20")
-        self.assertEqual(result["client_mac"], "02:00:00:00:00:20")
         self.assertEqual(result["manual_iphone"]["router"], "10.10.0.10")
         self.assertEqual(result["manual_iphone"]["dns"], "10.10.0.10")
         self.assertIn("--client-ip 10.10.0.20", result["commands"]["root_apply"])
@@ -803,7 +802,6 @@ class LanGatewayTests(unittest.TestCase):
 
         self.assertTrue(result["enabled"])
         self.assertEqual(result["client_ip"], "10.10.0.25")
-        self.assertEqual(result["client_mac"], "02:00:00:00:00:25")
         self.assertTrue(result["marker_stale"])
         self.assertIn("client_ip:10.10.0.30->10.10.0.25", result["marker_stale_reasons"])
         self.assertIn("--client-ip 10.10.0.25", result["commands"]["root_apply"])
@@ -812,7 +810,6 @@ class LanGatewayTests(unittest.TestCase):
         module = load_module()
         plan = {
             "client_ip": "10.10.0.20",
-            "client_mac": "02:00:00:00:00:20",
             "interface": "wlp0s20f3",
         }
 
@@ -822,7 +819,7 @@ class LanGatewayTests(unittest.TestCase):
         self.assertIn('iifname "wlp0s20f3" ip saddr 10.10.0.20 udp dport 53 redirect to :1053', text)
         self.assertIn('iifname "wlp0s20f3" ip saddr 10.10.0.20 meta l4proto tcp redirect to :12345', text)
         self.assertIn('ip saddr 10.10.0.20 oifname "wlp0s20f3" masquerade', text)
-        self.assertIn('iifname "wlp0s20f3" ether saddr 02:00:00:00:00:20 meta nfproto ipv6 reject', text)
+        self.assertNotIn("ether saddr", text)
         self.assertNotIn("10.10.0.0/24 meta l4proto tcp redirect", text)
 
     def test_lan_gateway_root_apply_checks_new_nft_before_replacing_table(self):
@@ -833,7 +830,6 @@ class LanGatewayTests(unittest.TestCase):
         module.lan_gateway_plan = lambda client_ip: {
             "ok": True,
             "client_ip": client_ip,
-            "client_mac": "02:00:00:00:00:20",
             "server": "10.10.0.10",
             "interface": "wlp0s20f3",
             "gateway": "10.10.0.1",
@@ -925,7 +921,6 @@ class LanGatewayTests(unittest.TestCase):
             "lan_gateway": {
                 "enabled": True,
                 "client_ip": "10.10.0.25",
-                "client_mac": "02:00:00:00:00:25",
                 "ip_forward": True,
                 "marker_stale": False,
                 "marker_stale_reasons": [],
@@ -936,7 +931,7 @@ class LanGatewayTests(unittest.TestCase):
                         'iifname "wlp0s20f3" ip saddr 10.10.0.25 tcp dport 53 redirect to :1053',
                         'iifname "wlp0s20f3" ip saddr 10.10.0.25 meta l4proto tcp redirect to :12345',
                         'iifname "wlp0s20f3" ip saddr 10.10.0.25 udp dport 443 reject with icmp port-unreachable',
-                        'iifname "wlp0s20f3" ether saddr 02:00:00:00:00:25 reject with icmpv6 port-unreachable',
+                        'iifname "wlp0s20f3" meta nfproto ipv6 reject with icmpv6 port-unreachable',
                     ]),
                 },
             },

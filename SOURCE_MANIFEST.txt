@@ -1,6 +1,6 @@
 project=proxy-gateway-console
-generatedAt=20260515T132901Z
-sourceHead=708f08a
+generatedAt=20260515T133434Z
+sourceHead=a52915d
 sourceBranch=codex/mac-arm64-self-use-package
 stagedChanges=0
 history=included=false

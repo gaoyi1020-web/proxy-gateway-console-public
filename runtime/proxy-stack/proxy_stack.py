@@ -1113,29 +1113,10 @@ def validate_single_ipv4(value: str) -> str:
     return str(address)
 
 
-def validate_mac_address(value: str) -> str:
-    value = (value or "").strip().lower()
-    if re.fullmatch(r"[0-9a-f]{2}(:[0-9a-f]{2}){5}", value):
-        return value
-    return ""
-
-
 def validate_interface_name(value: str) -> str:
     if re.fullmatch(r"[A-Za-z0-9_.:-]+", value or ""):
         return value
     return ""
-
-
-def lan_gateway_client_mac(client_ip: str, interface: str) -> str:
-    client_ip = validate_single_ipv4(client_ip)
-    interface = validate_interface_name(interface)
-    if not client_ip or not interface:
-        return ""
-    result = run(["ip", "neigh", "show", client_ip, "dev", interface], timeout=5)
-    if not result["ok"]:
-        return ""
-    match = re.search(r"\blladdr\s+([0-9A-Fa-f:]{17})\b", result["stdout"])
-    return validate_mac_address(match.group(1)) if match else ""
 
 
 def lan_gateway_plan(client_ip: str = "") -> dict[str, Any]:
@@ -1147,7 +1128,6 @@ def lan_gateway_plan(client_ip: str = "") -> dict[str, Any]:
     cidr = lan_cidr_for_interface(interface)
     inferred_client = infer_lan_gateway_client_ip(server)
     selected_client = validate_single_ipv4(client_ip or inferred_client)
-    client_mac = lan_gateway_client_mac(selected_client, interface)
     nft = lan_gateway_nft_state()
     marker = read_lan_gateway_marker()
     enabled = nft["state"] == "loaded" or bool(marker.get("enabled"))
@@ -1174,13 +1154,10 @@ def lan_gateway_plan(client_ip: str = "") -> dict[str, Any]:
         errors.append("client_ip_conflicts_with_gateway_or_host")
     if marker.get("enabled"):
         marker_client = str(marker.get("client_ip", ""))
-        marker_mac = str(marker.get("client_mac", ""))
         marker_server = str(marker.get("server", ""))
         marker_interface = str(marker.get("interface", ""))
         if selected_client and marker_client and marker_client != selected_client:
             marker_stale_reasons.append(f"client_ip:{marker_client}->{selected_client}")
-        if client_mac and marker_mac and marker_mac != client_mac:
-            marker_stale_reasons.append(f"client_mac:{marker_mac}->{client_mac}")
         if server and marker_server and marker_server != server:
             marker_stale_reasons.append(f"server:{marker_server}->{server}")
         if interface and marker_interface and marker_interface != interface:
@@ -1198,7 +1175,6 @@ def lan_gateway_plan(client_ip: str = "") -> dict[str, Any]:
         "gateway": gateway,
         "cidr": cidr,
         "client_ip": selected_client,
-        "client_mac": client_mac,
         "inferred_client_ip": inferred_client,
         "ip_forward": ip_forward_enabled(),
         "manual_iphone": {
@@ -1275,7 +1251,6 @@ def lan_gateway_coverage_report(data: dict[str, Any]) -> dict[str, Any]:
     nft_detail = rule_source["text"]
     rules_are_proven = rule_source["source"] == "nft"
     client_ip = str(lan_gateway.get("client_ip", ""))
-    client_mac = validate_mac_address(str(lan_gateway.get("client_mac", "")))
     checks: list[dict[str, Any]] = []
 
     def add(check_id: str, status: str, summary: str, evidence: Any = None) -> None:
@@ -1293,7 +1268,6 @@ def lan_gateway_coverage_report(data: dict[str, Any]) -> dict[str, Any]:
         ),
         {
             "client_ip": client_ip,
-            "client_mac": client_mac,
             "marker_stale": lan_gateway.get("marker_stale", False),
             "marker_stale_reasons": lan_gateway.get("marker_stale_reasons", []),
         },
@@ -1386,7 +1360,6 @@ def lan_gateway_coverage_report(data: dict[str, Any]) -> dict[str, Any]:
     ipv6_rule_present = (
         " ip6 " in nft_detail
         or "meta nfproto ipv6" in nft_detail
-        or bool(client_mac and client_mac in nft_detail and "icmpv6" in nft_detail)
     )
     add(
         "ipv6-policy",
@@ -1400,7 +1373,6 @@ def lan_gateway_coverage_report(data: dict[str, Any]) -> dict[str, Any]:
         ),
         {
             "rules_present": ipv6_rule_present,
-            "client_mac": client_mac,
             "rule_source": rule_source["source"],
             "host_ipv6_default_route": ipv6_state,
         },
@@ -1444,16 +1416,10 @@ def lan_gateway_coverage_report(data: dict[str, Any]) -> dict[str, Any]:
 
 def render_lan_gateway_nft(plan: dict[str, Any]) -> str:
     client_ip = validate_single_ipv4(str(plan.get("client_ip", "")))
-    client_mac = validate_mac_address(str(plan.get("client_mac", "")))
     interface = validate_interface_name(str(plan.get("interface", "")))
     if not client_ip or not interface:
         raise ValueError("lan gateway nft requires a single IPv4 client and safe interface name")
     reserved = ", ".join(str(port) for port in LAN_GATEWAY_RESERVED_TCP_PORTS)
-    ipv6_guard = (
-        f'\n    iifname "{interface}" ether saddr {client_mac} meta nfproto ipv6 reject'
-        if client_mac
-        else ""
-    )
     return f"""table inet {LAN_GATEWAY_TABLE} {{
   chain prerouting {{
     type nat hook prerouting priority dstnat; policy accept;
@@ -1475,7 +1441,6 @@ def render_lan_gateway_nft(plan: dict[str, Any]) -> str:
     type filter hook forward priority -20; policy accept;
 
     iifname "{interface}" ip saddr {client_ip} udp dport 443 reject
-    {ipv6_guard.strip()}
   }}
 }}
 """
@@ -1515,7 +1480,6 @@ def lan_gateway_root_apply(client_ip: str) -> dict[str, Any]:
         write_json_file(LAN_GATEWAY_STATE_FILE, {
             "enabled": True,
             "client_ip": plan["client_ip"],
-            "client_mac": plan.get("client_mac", ""),
             "server": plan["server"],
             "interface": plan["interface"],
             "gateway": plan["gateway"],

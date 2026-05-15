@@ -48,10 +48,10 @@ def detect_usb(root: str | Path | None = None) -> dict[str, Any]:
 
     errors = validate_usb_manifest(manifest)
     profile_present = (usb_root / USB_PROFILE).exists()
-    trusted = not errors
-    state = "trusted" if trusted else "untrusted"
+    verified = not errors
+    state = "trusted" if verified else "untrusted"
     return {
-        **_status(usb_root, manifest, trusted, state, errors),
+        **_status(usb_root, manifest, verified, state, errors),
         "profilePresent": profile_present,
         "profilePath": str(usb_root / USB_PROFILE),
     }
@@ -83,7 +83,7 @@ def recovery_manifest_template() -> dict[str, Any]:
     }
 
 
-def _status(root: Path, manifest: dict[str, Any] | None, trusted: bool, state: str, errors: list[str]) -> dict[str, Any]:
+def _status(root: Path, manifest: dict[str, Any] | None, verified: bool, state: str, errors: list[str]) -> dict[str, Any]:
     summary = None
     if isinstance(manifest, dict):
         marker = manifest.get(MANIFEST_MARKER_FIELD) or manifest.get(LEGACY_MANIFEST_MARKER_FIELD)
@@ -95,7 +95,7 @@ def _status(root: Path, manifest: dict[str, Any] | None, trusted: bool, state: s
         }
     return {
         "present": True,
-        "trusted": trusted,
+        "trusted": verified,
         "state": state,
         "root": str(root),
         "manifest": summary,
