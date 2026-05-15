@@ -57,6 +57,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "${OUT_DIR}" in
+  /*) ;;
+  *) OUT_DIR="${ROOT_DIR}/${OUT_DIR}" ;;
+esac
+PACKAGE_DIR="${OUT_DIR}/ProxyGateway-Mac-SelfUse-${VERSION}"
+ZIP_PATH="${OUT_DIR}/ProxyGateway-Mac-SelfUse-${VERSION}.zip"
+
 rm -rf "${PACKAGE_DIR}"
 rm -f "${ZIP_PATH}"
 mkdir -p "${PACKAGE_DIR}/payload/macvpn" "${PACKAGE_DIR}/payload/profile" "${PACKAGE_DIR}/payload/app" "${PACKAGE_DIR}/notices"
