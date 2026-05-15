@@ -35,12 +35,31 @@ const contentTypes = {
   ".json": "application/json; charset=utf-8"
 };
 
+function publicJsonBody(value) {
+  if (value instanceof Error) {
+    return { error: "Internal server error" };
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => publicJsonBody(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !/^(stack|stackTrace|trace)$/i.test(key))
+        .map(([key, item]) => [key, publicJsonBody(item)])
+    );
+  }
+  return value;
+}
+
 function sendJson(res, statusCode, body) {
-  const payload = JSON.stringify(body, null, 2);
+  const payload = JSON.stringify(publicJsonBody(body), null, 2);
   res.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store"
   });
+  // publicJsonBody removes Error instances and stack-like fields before output.
+  // codeql[js/stack-trace-exposure]
   res.end(payload);
 }
 
@@ -208,7 +227,7 @@ const server = http.createServer(async (req, res) => {
 
     sendJson(res, 404, { error: "Not found" });
   } catch (error) {
-    sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+    sendJson(res, 500, { error: "Internal server error" });
   }
 });
 

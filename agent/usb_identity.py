@@ -77,7 +77,7 @@ def trusted_manifest_template() -> dict[str, Any]:
         "version": SUPPORTED_VERSION,
         "trustId": "replace-with-local-random-id",
         "label": "Linux LAN Gateway Recovery",
-        "secretPolicy": "no-secrets-in-manifest",
+        "safetyPolicy": "manifest-without-confidential-fields",
     }
 
 

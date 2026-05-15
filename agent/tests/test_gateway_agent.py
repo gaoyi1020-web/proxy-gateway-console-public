@@ -1,6 +1,8 @@
+import io
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -229,6 +231,17 @@ class GatewayAgentTests(unittest.TestCase):
         self.assertNotIn("203.0.113.10", rendered_profile)
         self.assertNotIn("private-password", rendered_profile)
         self.assertEqual(decrypted["routes"]["us"]["authRef"], "adapter:sing-box:us")
+
+    def test_print_json_redacts_sensitive_fields(self):
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            gateway_agent.print_json({"ok": True, "token": "runtime-token", "message": "password=runtime-pass"})
+
+        rendered = output.getvalue()
+        self.assertIn("[redacted]", rendered)
+        self.assertNotIn("runtime-token", rendered)
+        self.assertNotIn("runtime-pass", rendered)
 
     def test_profile_export_refuses_plaintext_destination(self):
         with tempfile.TemporaryDirectory() as tmp:

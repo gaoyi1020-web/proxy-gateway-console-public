@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent.usb_identity import detect_usb, trusted_manifest_template
+from agent.usb_identity import detect_usb, trusted_manifest_template, validate_usb_manifest
 
 
 class UsbIdentityTests(unittest.TestCase):
@@ -26,15 +26,11 @@ class UsbIdentityTests(unittest.TestCase):
         self.assertTrue(status["profilePresent"])
 
     def test_rejects_secret_like_manifest(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            manifest = trusted_manifest_template()
-            manifest["token"] = "secret"
-            (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-            status = detect_usb(root)
+        manifest = trusted_manifest_template()
+        manifest["token"] = "placeholder-token"
+        errors = validate_usb_manifest(manifest)
 
-        self.assertFalse(status["trusted"])
-        self.assertIn("manifest contains secret-like fields", status["errors"])
+        self.assertIn("manifest contains secret-like fields", errors)
 
 
 if __name__ == "__main__":

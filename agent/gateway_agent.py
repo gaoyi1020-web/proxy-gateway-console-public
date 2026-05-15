@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import secrets
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,7 +20,7 @@ try:
     from .profile_schema import redacted_profile_template, validate_profile
     from .upstream_profile import load_upstream_json, upstream_to_profile
     from .runtime_launcher import build_runtime_plan, phone_setup_from_session, runtime_status, start_runtime, stop_runtime
-    from .session_store import SessionStore
+    from .session_store import SessionStore, redact_payload
     from .linux_lifecycle import lifecycle_status, uninstall_control_layer
     from .unlock_server import lock as unlock_lock
     from .unlock_server import serve_unlock
@@ -35,7 +36,7 @@ except ImportError:
     from profile_schema import redacted_profile_template, validate_profile
     from upstream_profile import load_upstream_json, upstream_to_profile
     from runtime_launcher import build_runtime_plan, phone_setup_from_session, runtime_status, start_runtime, stop_runtime
-    from session_store import SessionStore
+    from session_store import SessionStore, redact_payload
     from linux_lifecycle import lifecycle_status, uninstall_control_layer
     from unlock_server import lock as unlock_lock
     from unlock_server import serve_unlock
@@ -362,7 +363,11 @@ def self_check(usb_root: str | None = None, profile_path: str | None = None, pas
 
 
 def print_json(payload: dict[str, Any]) -> None:
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    # CLI stdout is the local control contract; redact_payload strips secret-like
+    # fields before rendering.
+    # codeql[py/clear-text-logging-sensitive-data]
+    sys.stdout.write(json.dumps(redact_payload(payload), indent=2, ensure_ascii=False))
+    sys.stdout.write("\n")
 
 
 def passphrase_from_args(args: argparse.Namespace) -> str:

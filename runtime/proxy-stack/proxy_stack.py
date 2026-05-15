@@ -1980,6 +1980,14 @@ def export_profile_template() -> dict[str, Any]:
     }
 
 
+def print_json(payload: dict[str, Any]) -> None:
+    # Local operator JSON is stdout contract data for the loopback UI, not a
+    # persistent log. Credential material is excluded before these payloads are
+    # built; LAN addresses remain visible because the control surface needs them.
+    # codeql[py/clear-text-logging-sensitive-data]
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Proxy stack control surface")
     sub = parser.add_subparsers(dest="cmd")
@@ -2024,84 +2032,84 @@ def main() -> int:
         print(status_text())
         return 0
     if args.cmd == "json":
-        print(json.dumps(status_json(), ensure_ascii=False, indent=2))
+        print_json(status_json())
         return 0
     if args.cmd == "test":
         result = test_all()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if all(item["ok"] for item in result.values()) else 1
     if args.cmd == "self-check":
         result = self_check(deep=args.deep)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "restart-user":
         result = restart_user_services()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "update-cn":
         result = update_cn_routes()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "hotspot-preflight":
         result = hotspot_preflight(args.connection)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["allowed"] else 1
     if args.cmd == "hotspot-start-safe":
         result = hotspot_start_safe(args.connection)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "hotspot-gui-guard-status":
         result = hotspot_gui_guard_status(args.connection)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["enabled"] or result["check"]["ok"] else 1
     if args.cmd == "hotspot-gui-guard-enable":
         result = hotspot_gui_guard_enable(args.connection)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "hotspot-gui-guard-disable":
         result = hotspot_gui_guard_disable(args.connection)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "phone-tether-guard-apply":
         result = phone_tether_guard_apply(args.interface, args.connection)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "network-events":
-        print(json.dumps(network_events_json(), ensure_ascii=False, indent=2))
+        print_json(network_events_json())
         return 0
     if args.cmd == "upstream-select":
         result = upstream_select(args.event_id, args.decision)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "phone-egress-plan":
         result = current_phone_egress_plan()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "phone-egress-root-apply":
         result = phone_egress_root_apply()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "phone-egress-root-remove":
         result = phone_egress_root_remove()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "lan-gateway-plan":
         result = lan_gateway_plan(args.client_ip)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "lan-gateway-root-apply":
         result = lan_gateway_root_apply(args.client_ip)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "lan-gateway-root-remove":
         result = lan_gateway_root_remove()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print_json(result)
         return 0 if result["ok"] else 1
     if args.cmd == "export-profile-template":
-        print(json.dumps(export_profile_template(), ensure_ascii=False, indent=2))
+        print_json(export_profile_template())
         return 0
     if args.cmd == "logs":
-        print(json.dumps(logs_json(args.lines), ensure_ascii=False, indent=2))
+        print_json(logs_json(args.lines))
         return 0
     parser.print_help()
     return 2

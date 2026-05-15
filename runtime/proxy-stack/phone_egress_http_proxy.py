@@ -9,6 +9,7 @@ packets go.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import logging
 import select
 import socket
@@ -50,6 +51,15 @@ def split_host_port(value: str, default_port: int) -> tuple[str, int]:
     return value, default_port
 
 
+def bind_address_for_source(source_ip: str, family: socket.AddressFamily) -> tuple | None:
+    source = ipaddress.ip_address(source_ip)
+    if family == socket.AF_INET and source.version == 4:
+        return (source_ip, 0)
+    if family == socket.AF_INET6 and source.version == 6:
+        return (source_ip, 0, 0, 0)
+    return None
+
+
 def origin_request(raw: bytes, target: str) -> bytes:
     parsed = urlsplit(target)
     if not parsed.scheme or not parsed.netloc:
@@ -77,9 +87,11 @@ class PhoneEgressProxy(socketserver.BaseRequestHandler):
     def open_remote(self, host: str, port: int) -> socket.socket:
         errors: list[str] = []
         for family, socktype, proto, _canon, address in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
+            bind_address = bind_address_for_source(self.source_ip, family)
+            if bind_address is None:
+                continue
             sock = socket.socket(family, socktype, proto)
             try:
-                bind_address = (self.source_ip, 0) if family == socket.AF_INET else ("::", 0, 0, 0)
                 sock.bind(bind_address)
                 sock.settimeout(self.connect_timeout)
                 sock.connect(address)
