@@ -43,7 +43,7 @@ jobs:
             --out-dir dist/self-use
 
       - name: Upload Mac package artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: mac-self-use
           path: dist/self-use/ProxyGateway-Mac-SelfUse-${{ env.RELEASE_VERSION }}.zip

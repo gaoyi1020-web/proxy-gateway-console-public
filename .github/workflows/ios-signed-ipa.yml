@@ -321,7 +321,7 @@ jobs:
           echo "IPA_EXPORT_DIR=${export_dir}" >> "${GITHUB_ENV}"
 
       - name: Upload IPA artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: sing-box-ios-${{ github.run_id }}
           path: |
