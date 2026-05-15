@@ -53,8 +53,9 @@ Follow-up cleanup required before changing repository visibility:
       private upstream labels in source, tests, and runtime examples with
       placeholders.
 - [x] Run current-file secret scan after cleanup changes are staged.
-- [ ] Run history secret scan before changing GitHub visibility.
-- [ ] Publish only after rewriting/squashing history or exporting a clean public
+- [ ] Run history secret scan before changing the existing private GitHub
+      repository visibility.
+- [x] Publish only after rewriting/squashing history or exporting a clean public
       repository, because existing history contains private machine and network
       evidence.
 - [ ] Revisit whether npm publishing is in scope.
@@ -64,3 +65,13 @@ Follow-up cleanup required before changing repository visibility:
 Changing the GitHub repository from private to public should be a separate,
 explicit action after this checklist passes. Public visibility must not be used
 as the cleanup mechanism.
+
+## Public Snapshot
+
+A clean, no-history public repository was created from an exported source
+snapshot instead of changing the existing private repository visibility:
+
+- Public repository: `https://github.com/gaoyi1020-web/proxy-gateway-console-public`
+- Source snapshot manifest: `SOURCE_MANIFEST.txt`
+- Snapshot property: `history=included=false`
+- Current exported source commit: recorded in `SOURCE_MANIFEST.txt`

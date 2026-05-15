@@ -61,24 +61,19 @@ Third-party dependency notices are tracked in
 - Rust/Tauri toolchain for desktop builds
 - Linux for the full proxy-stack runtime path
 
-## Development
+## Quickstart
+
+Use these commands from a fresh clone to validate the public project and start
+the loopback development services:
 
 ```bash
-npm install
+git clone https://github.com/gaoyi1020-web/proxy-gateway-console-public.git
+cd proxy-gateway-console-public
+npm ci
 npm run ci:local
-npm run license:audit
-npm run build
-npm test
 ```
 
-When GitHub-hosted Actions minutes are unavailable, use `npm run ci:local` as
-the local source CI gate. On a clean machine, run
-`CI_LOCAL_INSTALL=1 npm run ci:local` to refresh npm and Python dependencies
-before validation. The Tauri desktop compile check runs automatically when the
-generated sidecar binary is present; use `CI_LOCAL_DESKTOP_CHECK=1` to require
-it after running `scripts/desktop/build-agent-sidecar.sh`.
-
-Start the loopback API and development UI:
+Start the API and web UI in separate terminals:
 
 ```bash
 npm run server
@@ -87,6 +82,43 @@ npm run dev
 
 The API binds to `127.0.0.1:4077`. The Vite dev server binds to
 `127.0.0.1:5177`.
+
+If you are validating an existing checkout whose dependencies may be missing or
+stale, use `CI_LOCAL_INSTALL=1 npm run ci:local` to refresh npm and Python test
+dependencies before running the checks.
+
+## Public Usability Matrix
+
+| Area | Works From A Public Clone | Requires Private Local Configuration |
+| --- | --- | --- |
+| Install and local CI | `npm ci` and `npm run ci:local` | None |
+| Loopback API and web UI | `npm run server` and `npm run dev` | None for the development surfaces |
+| Tests and build | Node API, Python agent/runtime, UI typecheck, and frontend build | None |
+| Profile handling | Placeholder-safe schema validation and import paths | Real encrypted profiles stay outside Git |
+| Proxy-stack runtime | Static checks and public-safe tests | Linux host setup plus your own upstream proxy profile |
+| LAN gateway planning | Public code path and terminal-gated plan flow | Your own LAN interface and private route details |
+| Desktop shell | Tauri source and compile check when a sidecar exists | Generated sidecar binary and local release/signing process |
+
+The public repository is therefore ready for developer setup, review, and
+extension. It is not a one-command consumer installer: real upstream servers,
+credentials, encrypted profiles, LAN details, generated sidecars, and signed
+release artifacts must be supplied by each private deployment.
+
+## Development
+
+```bash
+npm ci
+npm run ci:local
+npm run license:audit
+npm run build
+npm test
+```
+
+When GitHub-hosted Actions minutes are unavailable, use `npm run ci:local` as
+the local source CI gate. The Tauri desktop compile check runs automatically
+when the generated sidecar binary is present; use
+`CI_LOCAL_DESKTOP_CHECK=1 npm run ci:local` to require it after running
+`scripts/desktop/build-agent-sidecar.sh`.
 
 ## Example Local Proxy Entries
 
