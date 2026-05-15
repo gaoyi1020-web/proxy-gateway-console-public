@@ -40,6 +40,8 @@ See [docs/OPEN_SOURCE_BOUNDARY.md](docs/OPEN_SOURCE_BOUNDARY.md) for the
 working boundary and remaining public-release checks.
 Third-party dependency notices are tracked in
 [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md).
+Release manifest and self-use update behavior is documented in
+[docs/UPDATE.md](docs/UPDATE.md).
 
 ## Architecture
 
@@ -119,6 +121,18 @@ the local source CI gate. The Tauri desktop compile check runs automatically
 when the generated sidecar binary is present; use
 `CI_LOCAL_DESKTOP_CHECK=1 npm run ci:local` to require it after running
 `scripts/desktop/build-agent-sidecar.sh`.
+
+## Updates
+
+Public releases can include a signed-by-checksum update manifest:
+
+```bash
+npm run update:check
+```
+
+The updater downloads the latest GitHub Release manifest, selects the compatible
+platform asset, verifies SHA256, and only installs when run with `--install
+--yes`. See [docs/UPDATE.md](docs/UPDATE.md).
 
 ## Example Local Proxy Entries
 

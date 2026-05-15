@@ -10,6 +10,8 @@ spend the minutes.
 - `CI` must stay on `ubuntu-latest` and should remain source-only.
 - iOS and signed IPA workflows must stay `workflow_dispatch` only.
 - Mac/iOS workflows must not run automatically on pull requests.
+- `Release` may use a macOS runner, but only through `workflow_dispatch`.
+- Dependabot updates should stay weekly with a small open PR limit.
 - All workflows must use `concurrency` with `cancel-in-progress: true` so a new
   push cancels the older run for the same ref.
 
@@ -20,6 +22,7 @@ quickly:
 
 - `iOS Upstream Candidate`
 - `iOS Signed IPA`
+- `Release`
 
 Run them manually only when the output is needed for a release decision. For
 routine development, prefer local hardware, a self-hosted runner, or a separate

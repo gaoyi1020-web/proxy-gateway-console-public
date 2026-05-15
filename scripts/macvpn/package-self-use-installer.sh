@@ -65,6 +65,7 @@ install -m 0755 "${ROOT_DIR}/scripts/macvpn/install-macvpn-kit.sh" "${PACKAGE_DI
 install -m 0755 "${ROOT_DIR}/scripts/macvpn/install-macvpn-rootctl.sh" "${PACKAGE_DIR}/payload/macvpn/install-macvpn-rootctl.sh"
 install -m 0755 "${ROOT_DIR}/scripts/macvpn/macvpnctl.sh" "${PACKAGE_DIR}/payload/macvpn/macvpnctl.sh"
 install -m 0644 "${ROOT_DIR}/scripts/macvpn/sing-box.tun.template.json" "${PACKAGE_DIR}/payload/macvpn/sing-box.tun.template.json"
+printf '%s\n' "${VERSION}" > "${PACKAGE_DIR}/payload/VERSION"
 cp "${ROOT_DIR}/config/profile.template.json" "${PACKAGE_DIR}/payload/profile/profile.template.json"
 install -m 0644 "${ROOT_DIR}/LICENSE" "${PACKAGE_DIR}/notices/LICENSE"
 install -m 0644 "${ROOT_DIR}/docs/THIRD_PARTY_NOTICES.md" "${PACKAGE_DIR}/notices/THIRD_PARTY_NOTICES.md"
@@ -133,6 +134,7 @@ else
 fi
 
 "${BASE_DIR}/payload/macvpn/install-macvpn-kit.sh" --target "${TARGET}"
+install -m 0644 "${BASE_DIR}/payload/VERSION" "${TARGET}/VERSION"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   if [[ -n "${PROXY_GATEWAY_SUDO_PASSWORD:-}" ]]; then

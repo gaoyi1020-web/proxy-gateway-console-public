@@ -53,7 +53,8 @@ jobs:
             scripts/cloud/*.sh \
             scripts/desktop/*.sh \
             scripts/macvpn/*.sh \
-            scripts/profile/*.sh
+            scripts/profile/*.sh \
+            scripts/update/*.sh
 
       - name: Mac kit static verification
         run: scripts/macvpn/verify-macvpn-kit.sh

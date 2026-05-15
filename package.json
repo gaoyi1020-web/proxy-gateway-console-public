@@ -21,6 +21,8 @@
     "license:audit": "node scripts/license-audit.mjs",
     "open-source:check": "bash scripts/open-source/check-public-core.sh",
     "open-source:export": "bash scripts/open-source/export-public-snapshot.sh",
+    "update:check": "scripts/update/proxy-gateway-self-update.sh --check",
+    "release:manifest": "node scripts/release/update-manifest.mjs",
     "desktop:build:self-use": "scripts/desktop/linux-build-self-use.sh --build",
     "desktop:install:self-use": "scripts/desktop/linux-install-self-use.sh --install",
     "desktop:verify:self-use": "scripts/desktop/linux-verify-self-use.sh",

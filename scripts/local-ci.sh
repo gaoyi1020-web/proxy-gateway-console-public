@@ -27,6 +27,7 @@ run_shell_syntax_check() {
     scripts/open-source/*.sh
     scripts/phone-compat/*.sh
     scripts/profile/*.sh
+    scripts/update/*.sh
   )
   shopt -u nullglob
 

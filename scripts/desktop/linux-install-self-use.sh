@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MODE="${1:---install}"
 INSTALL_ROOT="${PROXY_GATEWAY_DESKTOP_INSTALL_ROOT:-${HOME}/.local/share/proxy-gateway-desktop/self-use}"
+VERSION="${PROXY_GATEWAY_DESKTOP_VERSION:-$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${ROOT_DIR}/package.json" | head -n 1)}"
 BIN_DIR="${HOME}/.local/bin"
 APP_DIR="${HOME}/.local/share/applications"
 LAUNCHER="${BIN_DIR}/proxy-gateway-desktop"
@@ -76,6 +77,7 @@ install -m 0755 "${RELEASE_BIN}" "${INSTALL_ROOT}/bin/proxy-gateway-test"
 install -m 0755 "${RELEASE_SIDECAR}" "${INSTALL_ROOT}/bin/gateway-agent"
 install -m 0644 "${ROOT_DIR}/LICENSE" "${INSTALL_ROOT}/notices/LICENSE"
 install -m 0644 "${ROOT_DIR}/docs/THIRD_PARTY_NOTICES.md" "${INSTALL_ROOT}/notices/THIRD_PARTY_NOTICES.md"
+printf '%s\n' "${VERSION:-unknown}" >"${INSTALL_ROOT}/VERSION"
 
 if [[ -e "${LAUNCHER}" && ! -L "${LAUNCHER}" ]]; then
   cp "${LAUNCHER}" "${LEGACY_ARCHIVE_DIR}/proxy-gateway-desktop.bak.$(date +%Y%m%d%H%M%S)"

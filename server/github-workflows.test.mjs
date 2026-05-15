@@ -53,3 +53,14 @@ test("local CI fallback is documented and wired", async () => {
   assert.match(localCi, /desktop sidecar binary missing; npm run desktop:check skipped in auto mode/);
   assert.match(localCi, /npm run desktop:check/);
 });
+
+test("Dependabot keeps public dependency updates bounded", async () => {
+  const dependabot = await text(".github/dependabot.yml");
+
+  assert.match(dependabot, /package-ecosystem: "npm"/);
+  assert.match(dependabot, /package-ecosystem: "cargo"/);
+  assert.match(dependabot, /package-ecosystem: "github-actions"/);
+  assert.match(dependabot, /package-ecosystem: "pip"/);
+  assert.match(dependabot, /open-pull-requests-limit: 3/);
+  assert.match(dependabot, /interval: "weekly"/);
+});
