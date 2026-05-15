@@ -72,3 +72,9 @@ that check after running `scripts/desktop/build-agent-sidecar.sh`.
 If this repository is published as a public project, standard GitHub-hosted
 Actions runners become free for public repositories. Until then, treat all
 private-repo Actions minutes as scarce.
+
+For the public mirror, keep CodeQL default setup focused on low-cost languages
+that run reliably on `ubuntu-latest`: Actions, JavaScript/TypeScript, and
+Python. Do not enable Swift in default setup unless a macOS runner is explicitly
+budgeted; default setup autobuilds Swift and can spend minutes on a job that is
+not required for the Linux/web public security surface.
