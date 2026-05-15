@@ -66,12 +66,13 @@ ZIP_PATH="${OUT_DIR}/ProxyGateway-Mac-SelfUse-${VERSION}.zip"
 
 rm -rf "${PACKAGE_DIR}"
 rm -f "${ZIP_PATH}"
-mkdir -p "${PACKAGE_DIR}/payload/macvpn" "${PACKAGE_DIR}/payload/profile" "${PACKAGE_DIR}/payload/app" "${PACKAGE_DIR}/notices"
+mkdir -p "${PACKAGE_DIR}/payload/macvpn" "${PACKAGE_DIR}/payload/profile" "${PACKAGE_DIR}/payload/app" "${PACKAGE_DIR}/payload/update" "${PACKAGE_DIR}/notices"
 
 install -m 0755 "${ROOT_DIR}/scripts/macvpn/install-macvpn-kit.sh" "${PACKAGE_DIR}/payload/macvpn/install-macvpn-kit.sh"
 install -m 0755 "${ROOT_DIR}/scripts/macvpn/install-macvpn-rootctl.sh" "${PACKAGE_DIR}/payload/macvpn/install-macvpn-rootctl.sh"
 install -m 0755 "${ROOT_DIR}/scripts/macvpn/macvpnctl.sh" "${PACKAGE_DIR}/payload/macvpn/macvpnctl.sh"
 install -m 0644 "${ROOT_DIR}/scripts/macvpn/sing-box.tun.template.json" "${PACKAGE_DIR}/payload/macvpn/sing-box.tun.template.json"
+install -m 0755 "${ROOT_DIR}/scripts/update/proxy-gateway-self-update.sh" "${PACKAGE_DIR}/payload/update/proxy-gateway-self-update.sh"
 printf '%s\n' "${VERSION}" > "${PACKAGE_DIR}/payload/VERSION"
 cp "${ROOT_DIR}/config/profile.template.json" "${PACKAGE_DIR}/payload/profile/profile.template.json"
 install -m 0644 "${ROOT_DIR}/LICENSE" "${PACKAGE_DIR}/notices/LICENSE"
@@ -142,6 +143,7 @@ fi
 
 "${BASE_DIR}/payload/macvpn/install-macvpn-kit.sh" --target "${TARGET}"
 install -m 0644 "${BASE_DIR}/payload/VERSION" "${TARGET}/VERSION"
+install -m 0755 "${BASE_DIR}/payload/update/proxy-gateway-self-update.sh" "${TARGET}/proxy-gateway-self-update.sh"
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   if [[ -n "${PROXY_GATEWAY_SUDO_PASSWORD:-}" ]]; then

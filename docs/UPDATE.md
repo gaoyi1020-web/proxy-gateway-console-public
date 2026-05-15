@@ -26,6 +26,13 @@ Run from an installed machine:
 scripts/update/proxy-gateway-self-update.sh --check
 ```
 
+On a Mac self-use install, the package also installs the updater at:
+
+```bash
+~/ProxyGatewayMacVPN/proxy-gateway-self-update.sh --check
+~/ProxyGatewayMacVPN/macvpnctl.sh update-check
+```
+
 Download and verify the matching package without installing:
 
 ```bash

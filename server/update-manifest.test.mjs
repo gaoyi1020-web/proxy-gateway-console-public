@@ -69,6 +69,7 @@ test("update manifest rejects private runtime asset names", async () => {
 test("self updater verifies manifest checksums before install", async () => {
   const updater = await text("scripts/update/proxy-gateway-self-update.sh");
   const macPackage = await text("scripts/macvpn/package-self-use-installer.sh");
+  const macCtl = await text("scripts/macvpn/macvpnctl.sh");
   const linuxInstall = await text("scripts/desktop/linux-install-self-use.sh");
 
   assert.match(updater, /PROXY_GATEWAY_UPDATE_REPO:-gaoyi1020-web\/proxy-gateway-console-public/);
@@ -83,6 +84,11 @@ test("self updater verifies manifest checksums before install", async () => {
   assert.doesNotMatch(updater, /upstream\.json/);
   assert.match(macPackage, /payload\/VERSION/);
   assert.match(macPackage, /TARGET\}\/VERSION/);
+  assert.match(macPackage, /payload\/update\/proxy-gateway-self-update\.sh/);
+  assert.match(macPackage, /TARGET\}\/proxy-gateway-self-update\.sh/);
+  assert.match(macCtl, /update-check\) run_update --check/);
+  assert.match(macCtl, /update-download\) run_update --download/);
+  assert.match(macCtl, /update-install\) run_update --install/);
   assert.match(linuxInstall, /INSTALL_ROOT\}\/VERSION/);
 });
 

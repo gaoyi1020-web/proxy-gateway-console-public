@@ -10,6 +10,7 @@ UPSTREAM_PROFILE="${CONFIG_DIR}/upstream.json"
 ENCRYPTED_PROFILE="${CONFIG_DIR}/profile.json.enc"
 RENDERED_CONFIG="${CONFIG_DIR}/sing-box.json"
 TEMPLATE_CONFIG="${APP_DIR}/sing-box.tun.template.json"
+UPDATE_SCRIPT="${APP_DIR}/proxy-gateway-self-update.sh"
 PLIST="${HOME}/Library/LaunchAgents/com.proxygateway.macvpn.plist"
 ROOT_PLIST="/Library/LaunchDaemons/com.proxygateway.macvpn.plist"
 LABEL="com.proxygateway.macvpn"
@@ -55,6 +56,9 @@ commands:
   stop-root
   test
   snapshot
+  update-check
+  update-download
+  update-install
   prepare-independent-underlay
   restore-lan-gateway
   uninstall
@@ -161,6 +165,16 @@ snapshot() {
     scutil --dns || true
   } > "${STATE_DIR}/network-snapshot.txt"
   printf 'snapshot written: %s\n' "${STATE_DIR}/network-snapshot.txt"
+}
+
+run_update() {
+  local mode="$1"
+  shift || true
+  if [[ ! -x "${UPDATE_SCRIPT}" ]]; then
+    printf 'updater missing: %s\n' "${UPDATE_SCRIPT}" >&2
+    return 1
+  fi
+  "${UPDATE_SCRIPT}" "${mode}" "$@"
 }
 
 profile_status() {
@@ -640,6 +654,9 @@ case "${command}" in
   stop-root) stop_root_service "$@" ;;
   test) test_config "$@" ;;
   snapshot) snapshot "$@" ;;
+  update-check) run_update --check "$@" ;;
+  update-download) run_update --download "$@" ;;
+  update-install) run_update --install "$@" ;;
   prepare-independent-underlay) prepare_independent_underlay "$@" ;;
   restore-lan-gateway) restore_lan_gateway "$@" ;;
   uninstall) uninstall "$@" ;;
