@@ -23,6 +23,8 @@ test("Mac self-use package includes license notices and verifies them", async ()
   assert.match(packageScript, /install -m 0644 "\$\{ROOT_DIR\}\/LICENSE" "\$\{PACKAGE_DIR\}\/notices\/LICENSE"/);
   assert.match(packageScript, /install -m 0644 "\$\{ROOT_DIR\}\/docs\/THIRD_PARTY_NOTICES\.md" "\$\{PACKAGE_DIR\}\/notices\/THIRD_PARTY_NOTICES\.md"/);
   assert.match(packageScript, /scripts\/update\/proxy-gateway-self-update\.sh/);
+  assert.match(packageScript, /PROXY_GATEWAY_SKIP_ROOTCTL_INSTALL/);
+  assert.match(packageScript, /root controller install skipped/);
   assert.match(packageScript, /OUT_DIR="\$\{ROOT_DIR\}\/\$\{OUT_DIR\}"/);
   assert.match(packageScript, /ZIP_PATH="\$\{OUT_DIR\}\/ProxyGateway-Mac-SelfUse-\$\{VERSION\}\.zip"/);
   assert.match(packageScript, /test -f "\$\{PACKAGE_DIR\}\/notices\/LICENSE"/);

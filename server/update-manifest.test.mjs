@@ -80,6 +80,7 @@ test("self updater verifies manifest checksums before install", async () => {
   assert.match(updater, /--install/);
   assert.match(updater, /--yes/);
   assert.match(updater, /Install Proxy Gateway\.command/);
+  assert.match(updater, /PROXY_GATEWAY_SKIP_ROOTCTL_INSTALL="\$\{PROXY_GATEWAY_SKIP_ROOTCTL_INSTALL:-1\}" bash "\$\{installer\}"/);
   assert.doesNotMatch(updater, /profile\.json\.enc/);
   assert.doesNotMatch(updater, /upstream\.json/);
   assert.match(macPackage, /payload\/VERSION/);

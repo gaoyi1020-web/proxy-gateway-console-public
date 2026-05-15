@@ -145,13 +145,15 @@ fi
 install -m 0644 "${BASE_DIR}/payload/VERSION" "${TARGET}/VERSION"
 install -m 0755 "${BASE_DIR}/payload/update/proxy-gateway-self-update.sh" "${TARGET}/proxy-gateway-self-update.sh"
 
-if [[ "$(uname -s)" == "Darwin" ]]; then
+if [[ "$(uname -s)" == "Darwin" && "${PROXY_GATEWAY_SKIP_ROOTCTL_INSTALL:-0}" != "1" ]]; then
   if [[ -n "${PROXY_GATEWAY_SUDO_PASSWORD:-}" ]]; then
     printf '%s\n' "${PROXY_GATEWAY_SUDO_PASSWORD}" \
       | sudo -S -p '' "${BASE_DIR}/payload/macvpn/install-macvpn-rootctl.sh" --user "$(id -un)"
   else
     sudo "${BASE_DIR}/payload/macvpn/install-macvpn-rootctl.sh" --user "$(id -un)"
   fi
+elif [[ "$(uname -s)" == "Darwin" ]]; then
+  echo "root controller install skipped by PROXY_GATEWAY_SKIP_ROOTCTL_INSTALL=1"
 fi
 
 cat <<EOF

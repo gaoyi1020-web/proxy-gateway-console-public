@@ -47,7 +47,9 @@ scripts/update/proxy-gateway-self-update.sh --install --yes
 
 The updater refuses to install before the downloaded asset matches the manifest
 SHA256. Mac updates still run the package installer, so privileged root
-controller changes remain terminal-gated by `sudo`.
+controller changes remain terminal-gated by `sudo`. Existing Mac self-updates
+skip root controller reinstall by default; set `PROXY_GATEWAY_SKIP_ROOTCTL_INSTALL=0`
+when a release intentionally changes the root controller.
 
 ## Publishing
 

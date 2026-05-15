@@ -229,7 +229,7 @@ install_asset() {
       unzip -q "${file}" -d "${extract_dir}"
       installer="$(find "${extract_dir}" -maxdepth 3 -type f -name 'Install Proxy Gateway.command' -print -quit)"
       [[ -n "${installer}" ]] || fail "Install Proxy Gateway.command not found in update package"
-      bash "${installer}"
+      PROXY_GATEWAY_SKIP_ROOTCTL_INSTALL="${PROXY_GATEWAY_SKIP_ROOTCTL_INSTALL:-1}" bash "${installer}"
       ;;
     self-use-tar)
       tar -xzf "${file}" -C "${extract_dir}"
