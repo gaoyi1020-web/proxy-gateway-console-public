@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IFACE="${1:-}"
+ACTION="${2:-${NM_DISPATCHER_ACTION:-}}"
+CONNECTION="${CONNECTION_ID:-}"
+PROXY_STACK="${PROXY_STACK:-${HOME}/.local/bin/proxy-stack}"
+
+if [[ -z "$IFACE" || -z "$CONNECTION" ]]; then
+  exit 0
+fi
+
+case "$ACTION" in
+  pre-up|up)
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+
+"$PROXY_STACK" phone-tether-guard-apply "$IFACE" "$CONNECTION" >&2 || true
+exit 0

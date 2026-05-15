@@ -1,0 +1,14 @@
+[Unit]
+Description=Linux LAN Gateway v2 session agent
+Documentation=file:@PROJECT_ROOT@/docs/V2_PORTABLE_PRIVATE_GATEWAY.md
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=GATEWAY_AGENT_V2=1
+WorkingDirectory=@PROJECT_ROOT@
+ExecStart=@GATEWAY_AGENT_WRAPPER@ daemon --interval 5
+ExecStop=@GATEWAY_AGENT_WRAPPER@ stop
+
+[Install]
+WantedBy=default.target

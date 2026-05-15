@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Project
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        run: npm test
+
+      - name: Shell syntax
+        shell: bash
+        run: |
+          shopt -s nullglob
+          bash -n \
+            scripts/cgc \
+            scripts/*.sh \
+            scripts/cloud/*.sh \
+            scripts/desktop/*.sh \
+            scripts/macvpn/*.sh \
+            scripts/profile/*.sh
+
+      - name: Mac kit static verification
+        run: scripts/macvpn/verify-macvpn-kit.sh
+
+      - name: Package boundary
+        shell: bash
+        run: |
+          if [[ -f dist/self-use/ProxyGateway-Mac-SelfUse-0.2.0.zip ]]; then
+            unzip -l dist/self-use/ProxyGateway-Mac-SelfUse-0.2.0.zip \
+              | egrep 'upstream.json|sing-box.json|profile.json.enc|\.log|verify-mac-desktop-state.sh|verify-mac-ui-closeout.sh|package-self-use-installer.sh' \
+              && exit 1 || true
+          fi

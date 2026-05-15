@@ -1,0 +1,73 @@
+{
+  "links": [
+    {
+      "id": "main-download",
+      "name": "Main Download Route",
+      "role": "Current project and local downloads",
+      "mode": "HTTP + SOCKS",
+      "route": "8118 -> 1080 -> private upstream",
+      "ports": ["127.0.0.1:8118", "127.0.0.1:1080"],
+      "services": ["proxy-app managed sslocal-rust", "privoxy"],
+      "risk": "Do not modify by default",
+      "benchmark": {
+        "httpProxy": "http://127.0.0.1:8118",
+        "socksProxy": "127.0.0.1:1080"
+      }
+    },
+    {
+      "id": "phone-canary",
+      "name": "Phone Hotspot Canary",
+      "role": "Phone hotspot HTTP proxy",
+      "mode": "HTTP bridge + secondary upstream",
+      "route": "LAN 18181: private ranges direct, foreign -> 18122 -> 11880 -> private upstream",
+      "ports": ["LAN:18181", "0.0.0.0:18122", "127.0.0.1:11880"],
+      "services": ["iphone-lan-proxy.service", "secondary-proxy-client.service", "secondary-http-proxy.service", "secondary-socks.service"],
+      "risk": "Safe phone path; does not replace main route",
+      "benchmark": {
+        "httpProxy": "http://127.0.0.1:18122",
+        "socksProxy": "127.0.0.1:11880"
+      }
+    },
+    {
+      "id": "app-failover",
+      "name": "App Failover Proxy",
+      "role": "Opt-in HTTP proxy for local app services",
+      "mode": "HTTP failover bridge",
+      "route": "18180 -> old 8118, fallback new 18122",
+      "ports": ["127.0.0.1:18180", "127.0.0.1:8118", "127.0.0.1:18122"],
+      "services": ["proxy-failover.service", "privoxy", "secondary-http-proxy.service"],
+      "risk": "Opt-in only; existing application proxy env remains unchanged",
+      "benchmark": {
+        "httpProxy": "http://127.0.0.1:18180"
+      }
+    },
+    {
+      "id": "hotspot-split",
+      "name": "Hotspot Split Gateway",
+      "role": "Transparent proxy for hotspot clients",
+      "mode": "DNS split + TCP redirect",
+      "route": "client subnet: private ranges direct, foreign TCP via 18180",
+      "ports": ["0.0.0.0:1053", "0.0.0.0:12345", "127.0.0.1:18180"],
+      "services": ["hotspot-split-dns.service", "hotspot-split-proxy.service", "hotspot-split-nft.service"],
+      "risk": "Only start hotspot through the guarded action when upstream is not the same Wi-Fi card",
+      "benchmark": {
+        "dnsProxy": "127.0.0.1:1053",
+        "httpProxy": "http://127.0.0.1:18180"
+      }
+    },
+    {
+      "id": "lan-gateway",
+      "name": "LAN Gateway",
+      "role": "Single phone manual-router gateway",
+      "mode": "nftables redirect + NAT",
+      "route": "phone -> LAN-IP router -> 1053/12345 -> 18180",
+      "ports": ["0.0.0.0:1053", "0.0.0.0:12345", "127.0.0.1:18180"],
+      "services": ["hotspot-split-dns.service", "hotspot-split-proxy.service", "proxy-failover.service"],
+      "risk": "Root-gated and single-client only; phone must manually set router to this host",
+      "benchmark": {
+        "dnsProxy": "127.0.0.1:1053",
+        "httpProxy": "http://127.0.0.1:18180"
+      }
+    }
+  ]
+}

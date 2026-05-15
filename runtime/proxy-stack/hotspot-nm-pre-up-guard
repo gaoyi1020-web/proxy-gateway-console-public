@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IFACE="${1:-}"
+ACTION="${2:-${NM_DISPATCHER_ACTION:-}}"
+CONNECTION="${CONNECTION_ID:-}"
+TARGET_CONNECTION="${HOTSPOT_GUARD_CONNECTION:-GY-Hotspot}"
+PROXY_STACK="${PROXY_STACK:-${HOME}/.local/bin/proxy-stack}"
+
+if [[ "$CONNECTION" != "$TARGET_CONNECTION" ]]; then
+  exit 0
+fi
+
+if [[ "$ACTION" == "down" ]]; then
+  "$PROXY_STACK" hotspot-gui-guard-enable "$TARGET_CONNECTION" >/dev/null || true
+  exit 0
+fi
+
+if [[ "$ACTION" == "pre-up" ]]; then
+  if "$PROXY_STACK" hotspot-preflight "$TARGET_CONNECTION" >/dev/null; then
+    exit 0
+  fi
+
+  echo "hotspot guard: blocked $TARGET_CONNECTION activation on ${IFACE:-unknown interface}" >&2
+  "$PROXY_STACK" hotspot-preflight "$TARGET_CONNECTION" >&2 || true
+  exit 1
+fi
+
+exit 0

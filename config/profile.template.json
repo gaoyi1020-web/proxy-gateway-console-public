@@ -1,0 +1,43 @@
+{
+  "version": 2,
+  "name": "personal-gateway",
+  "routes": {
+    "old": {
+      "type": "http",
+      "endpoint": "http://127.0.0.1:8118",
+      "authRef": "local:old"
+    },
+    "new": {
+      "type": "http",
+      "endpoint": "http://127.0.0.1:18122",
+      "authRef": "local:new"
+    },
+    "failover": {
+      "type": "failover",
+      "order": ["old", "new"]
+    },
+    "lanProxy": {
+      "type": "lanProxy",
+      "bind": "dynamic",
+      "policy": "cn-private-direct-foreign-proxy"
+    }
+  },
+  "splitRules": {
+    "policy": "cn-private-direct-foreign-proxy",
+    "domestic": "direct",
+    "private": "direct",
+    "foreign": "failover"
+  },
+  "privacy": {
+    "logs": "redacted",
+    "state": "local-private"
+  },
+  "ui": {
+    "defaultRegion": "failover",
+    "regions": [
+      {"id": "old", "label": "Old"},
+      {"id": "new", "label": "New"},
+      {"id": "failover", "label": "Failover"}
+    ]
+  }
+}
