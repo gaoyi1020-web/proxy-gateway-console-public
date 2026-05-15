@@ -1,0 +1,8 @@
+project=proxy-gateway-console
+generatedAt=20260515T152153Z
+sourceHead=cdb789f
+sourceBranch=codex/mac-arm64-self-use-package
+stagedChanges=0
+history=included=false
+license=MIT
+thirdPartyNotices=docs/THIRD_PARTY_NOTICES.md

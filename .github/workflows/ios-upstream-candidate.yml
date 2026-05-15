@@ -1,0 +1,129 @@
+name: iOS Upstream Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      sing_box_ref:
+        description: "SagerNet/sing-box ref to test"
+        required: false
+        default: "stable"
+      apple_ref:
+        description: "SagerNet/sing-box-for-apple ref to test"
+        required: false
+        default: ""
+      scheme:
+        description: "Apple client scheme"
+        required: false
+        default: "SFI"
+      xcode_path:
+        description: "Xcode developer directory"
+        required: false
+        default: "/Applications/Xcode_26.3.app/Contents/Developer"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-sfi:
+    name: Build sing-box iOS candidate
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    env:
+      SING_BOX_REF: ${{ github.event.inputs.sing_box_ref || 'stable' }}
+      APPLE_REF: ${{ github.event.inputs.apple_ref || '' }}
+      SFI_SCHEME: ${{ github.event.inputs.scheme || 'SFI' }}
+      XCODE_PATH: ${{ github.event.inputs.xcode_path || '/Applications/Xcode_26.3.app/Contents/Developer' }}
+
+    steps:
+      - name: Checkout control repo
+        uses: actions/checkout@v6
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          ls -1d /Applications/Xcode*.app
+          sudo xcode-select -s "${XCODE_PATH}"
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          if ! command -v xcbeautify >/dev/null 2>&1; then
+            brew install xcbeautify
+          fi
+          xcbeautify --version
+          go version
+
+      - name: Clone upstream candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/sing-box-ios-candidate"
+          cd "${RUNNER_TEMP}/sing-box-ios-candidate"
+
+          git clone --depth 1 --branch "${SING_BOX_REF}" https://github.com/SagerNet/sing-box.git sing-box
+
+          if [[ -n "${APPLE_REF}" ]]; then
+            git clone --depth 1 --branch "${APPLE_REF}" https://github.com/SagerNet/sing-box-for-apple.git sing-box-for-apple
+          else
+            apple_commit="$(git -C sing-box submodule status clients/apple | awk '{print $1}' | sed 's/^-//')"
+            git clone https://github.com/SagerNet/sing-box-for-apple.git sing-box-for-apple
+            git -C sing-box-for-apple fetch --depth 1 origin "${apple_commit}"
+            git -C sing-box-for-apple checkout "${apple_commit}"
+          fi
+
+          git -C sing-box-for-apple submodule update --init --recursive --depth 1
+
+          echo "SING_BOX_PATH=${RUNNER_TEMP}/sing-box-ios-candidate/sing-box" >> "${GITHUB_ENV}"
+          echo "APPLE_PATH=${RUNNER_TEMP}/sing-box-ios-candidate/sing-box-for-apple" >> "${GITHUB_ENV}"
+          git -C sing-box log -1 --oneline
+          git -C sing-box-for-apple log -1 --oneline
+
+      - name: Build Libbox.xcframework
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C "${SING_BOX_PATH}" lib_install
+          make -C "${SING_BOX_PATH}" lib_apple
+          test -d "${APPLE_PATH}/Libbox.xcframework"
+
+      - name: Resolve Swift packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${APPLE_PATH}"
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project sing-box.xcodeproj \
+            -scheme "${SFI_SCHEME}" \
+            -skipPackagePluginValidation \
+            -skipMacroValidation
+
+      - name: Build iOS app without signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${APPLE_PATH}"
+          xcodebuild build \
+            -project sing-box.xcodeproj \
+            -scheme "${SFI_SCHEME}" \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            | xcbeautify

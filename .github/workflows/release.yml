@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without v prefix, for example 0.2.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.version }}
+  cancel-in-progress: true
+
+env:
+  RELEASE_VERSION: ${{ inputs.version }}
+  RELEASE_TAG: v${{ inputs.version }}
+
+jobs:
+  mac-self-use:
+    name: Build Mac Self-Use Package
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build desktop app
+        env:
+          PROXY_GATEWAY_DESKTOP_VERSION: ${{ env.RELEASE_VERSION }}
+          PROXY_GATEWAY_DESKTOP_BUILD: ${{ github.run_number }}
+        run: macos/ProxyGatewayDesktop/script/build_and_run.sh install
+
+      - name: Package Mac self-use updater asset
+        run: |
+          scripts/macvpn/package-self-use-installer.sh \
+            --app macos/ProxyGatewayDesktop/dist/ProxyGatewayDesktop.app \
+            --version "${RELEASE_VERSION}" \
+            --out-dir dist/self-use
+
+      - name: Upload Mac package artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: mac-self-use
+          path: dist/self-use/ProxyGateway-Mac-SelfUse-${{ env.RELEASE_VERSION }}.zip
+          if-no-files-found: error
+
+  manifest-and-release:
+    name: Publish Release Manifest
+    runs-on: ubuntu-latest
+    needs:
+      - mac-self-use
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download Mac package artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: mac-self-use
+          path: dist/release-assets
+
+      - name: Package source archive
+        run: |
+          mkdir -p dist/release-assets
+          scripts/cloud/package-v2-for-aws.sh \
+            "dist/release-assets/ProxyGateway-Console-${RELEASE_VERSION}-archive-$(date -u +%Y%m%d).tar.gz"
+
+      - name: Create update manifest
+        run: |
+          node scripts/release/update-manifest.mjs \
+            --repo "${GITHUB_REPOSITORY}" \
+            --tag "${RELEASE_TAG}" \
+            --version "${RELEASE_VERSION}" \
+            --asset "dist/release-assets/ProxyGateway-Mac-SelfUse-${{ env.RELEASE_VERSION }}.zip" \
+            --asset "$(find dist/release-assets -maxdepth 1 -name 'ProxyGateway-Console-*.tar.gz' -print -quit)" \
+            --out "dist/release-assets/proxy-gateway-update-manifest.json"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" dist/release-assets/* --clobber
+          else
+            gh release create "${RELEASE_TAG}" dist/release-assets/* \
+              --title "Proxy Gateway ${RELEASE_VERSION}" \
+              --notes "Public release assets with SHA256 update manifest."
+          fi

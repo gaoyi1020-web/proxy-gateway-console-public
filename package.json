@@ -1,0 +1,46 @@
+{
+  "name": "proxy-gateway-console",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && bash scripts/frontend-clean-dist.sh && vite build",
+    "desktop:build": "tauri build",
+    "desktop:check": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "desktop:dev": "tauri dev",
+    "preview": "vite preview --host 127.0.0.1",
+    "server": "node server/index.mjs",
+    "ci:local": "bash scripts/local-ci.sh",
+    "test": "npm run test:server && npm run test:agent && npm run test:runtime && npm run test:ui",
+    "test:server": "node --test server/*.test.mjs",
+    "test:agent": "python3 -m unittest discover -s agent/tests",
+    "test:runtime": "python3 -m py_compile runtime/proxy-stack/proxy_stack.py && cd runtime/proxy-stack && python3 -m unittest discover -s tests",
+    "test:ui": "tsc -b",
+    "license:audit": "node scripts/license-audit.mjs",
+    "open-source:check": "bash scripts/open-source/check-public-core.sh",
+    "open-source:export": "bash scripts/open-source/export-public-snapshot.sh",
+    "update:check": "scripts/update/proxy-gateway-self-update.sh --check",
+    "release:manifest": "node scripts/release/update-manifest.mjs",
+    "desktop:build:self-use": "scripts/desktop/linux-build-self-use.sh --build",
+    "desktop:install:self-use": "scripts/desktop/linux-install-self-use.sh --install",
+    "desktop:verify:self-use": "scripts/desktop/linux-verify-self-use.sh",
+    "desktop:smoke:self-use": "scripts/desktop/linux-smoke-self-use.sh"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "@vitejs/plugin-react": "^5.1.2",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.7"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3"
+  }
+}

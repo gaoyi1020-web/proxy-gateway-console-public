@@ -1,0 +1,15 @@
+[Unit]
+Description=Hotspot split gateway nftables rules
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOTSPOT_SPLIT_BASE=/var/lib/hotspot-split-gateway
+Environment=HOTSPOT_SPLIT_BIN=/usr/local/bin/hotspot-split-gateway
+ExecStart=/usr/bin/env bash -lc 'exec "$HOTSPOT_SPLIT_BIN" root-apply'
+ExecStop=/usr/bin/env bash -lc 'exec "$HOTSPOT_SPLIT_BIN" root-remove'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

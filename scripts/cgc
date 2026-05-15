@@ -1,0 +1,949 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+Proxy Gateway CGC
+
+Project-local closeout and reviewer handoff workflow.
+
+Usage:
+  scripts/cgc status [--lane mac|linux-workbench] [--local-only] [--require-app-running] [--dry-run]
+  scripts/cgc closeout --task <task> [--lane mac|linux-workbench] [--local-only] [--require-app-running] [--allow-service-change] [--dry-run]
+  scripts/cgc evidence-pack --task <task> [--lane mac|linux-workbench|project] [--dry-run]
+  scripts/cgc gemini --task <task> [--lane mac|linux-workbench] [--dry-run]
+  scripts/cgc claude-brief --task <task> --scope <scope> --files <files> --tests <tests> [--dry-run]
+  scripts/cgc claude-plan --task <task> --scope <scope> --files <files> --tests <tests> [--dry-run]
+  scripts/cgc network-scan [--dry-run]
+  scripts/cgc self-test
+
+Flow:
+  Codex evidence pack -> Gemini rough scan -> Codex line-check processing -> Claude narrow brief/plan when needed -> Codex verifies and finalizes.
+
+Safety:
+  - This is local to proxy-gateway-console; it does not call OpenClaw CGC.
+  - Gemini prompts are read-only and candidate-only.
+  - Gemini findings require Codex path:line verification before action.
+  - Claude briefs are bounded by explicit scope/files/tests.
+  - Root VPN start/stop is not executed by CGC closeout.
+EOF
+}
+
+die() {
+  printf 'cgc: %s\n' "$*" >&2
+  exit 2
+}
+
+slugify() {
+  tr '[:upper:]' '[:lower:]' |
+    sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' |
+    cut -c1-60
+}
+
+timestamp() {
+  date '+%Y%m%d-%H%M%S'
+}
+
+run_status() {
+  local local_only=0 require_app=0 dry_run=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --local-only)
+        local_only=1
+        shift
+        ;;
+      --require-app-running)
+        require_app=1
+        shift
+        ;;
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      *)
+        die "unknown status argument: $1"
+        ;;
+    esac
+  done
+
+  if [[ "${dry_run}" == "1" ]]; then
+    printf 'CGC status dry run\n'
+    printf 'would run: scripts/macvpn/verify-macvpn-kit.sh\n'
+    if [[ "${local_only}" == "1" ]]; then
+      printf 'would skip: scripts/macvpn/verify-mac-desktop-state.sh (--local-only)\n'
+    elif [[ "${require_app}" == "1" ]]; then
+      printf 'would run: REQUIRE_APP_RUNNING=1 scripts/macvpn/verify-mac-desktop-state.sh\n'
+    else
+      printf 'would run: scripts/macvpn/verify-mac-desktop-state.sh\n'
+    fi
+    return 0
+  fi
+
+  (cd "${ROOT_DIR}" && scripts/macvpn/verify-macvpn-kit.sh)
+  if [[ "${local_only}" == "1" ]]; then
+    printf 'Mac desktop state: skipped (--local-only)\n'
+  elif [[ "${require_app}" == "1" ]]; then
+    (cd "${ROOT_DIR}" && REQUIRE_APP_RUNNING=1 scripts/macvpn/verify-mac-desktop-state.sh)
+  else
+    (cd "${ROOT_DIR}" && scripts/macvpn/verify-mac-desktop-state.sh)
+  fi
+}
+
+render_mac_gemini_prompt() {
+  local task="$1"
+  local gemini_model="${CGC_GEMINI_MODEL:-gemini-cli-default}"
+  cat <<EOF
+# Gemini read-only review prompt
+
+Task: ${task}
+Requested Gemini model: ${gemini_model}
+
+You are a read-only reviewer for the proxy-gateway-console Mac closeout lane.
+Do not modify files. Do not run root service changes. Do not request or expose upstream proxy credentials.
+
+Review these evidence sources:
+- docs/PROJECT_DOSSIER.md
+- docs/verification/MAC_PROJECT_CLOSEOUT_2026-05-04.md
+- docs/verification/MAC_NATIVE_DESKTOP_APP_2026-05-04.md
+- docs/verification/MAC_UI_CLOSEOUT_2026-05-04.md
+- scripts/macvpn/verify-macvpn-kit.sh
+- scripts/macvpn/verify-mac-desktop-state.sh
+- scripts/macvpn/verify-mac-ui-closeout.sh
+
+Return:
+- confirmed evidence, with file paths;
+- risks or stale claims;
+- missing verification;
+- a Codex verification checklist.
+EOF
+}
+
+render_linux_workbench_gemini_prompt() {
+  local task="$1"
+  local gemini_model="${CGC_GEMINI_MODEL:-gemini-cli-default}"
+  cat <<EOF
+# Gemini read-only review prompt
+
+Task: ${task}
+Requested Gemini model: ${gemini_model}
+
+Lane: Linux status workbench lane
+
+You are a read-only reviewer for the proxy-gateway-console Linux status
+workbench lane. Do not modify files. Do not run root service changes. Do not
+request, read, or expose upstream proxy credentials, encrypted profile
+ciphertext, rendered runtime config, private logs, or root-owned network state.
+
+Review these evidence sources:
+- docs/PROJECT_DOSSIER.md
+- docs/superpowers/specs/2026-05-08-linux-status-workbench-design.md
+- docs/superpowers/plans/2026-05-08-linux-status-workbench-ui.md
+- docs/superpowers/specs/2026-05-09-web-operations-workbench-design.md
+- docs/superpowers/plans/2026-05-09-web-operations-workbench-ui.md
+- docs/cgc/gemini/20260509-220021-web-operations-workbench-full-review.md
+- docs/verification/LINUX_PROXY_UNIFICATION_V5_2026-05-08.md
+- docs/verification/LINUX_STATUS_WORKBENCH_UI_2026-05-08.md
+- src/App.tsx
+- src/components/ControlPanel.tsx
+- src/components/LinuxConfigPage.tsx
+- src/components/LinuxStatusWorkbench.tsx
+- src/components/LinuxStatusSummary.tsx
+- src/components/LinuxSetupSummary.tsx
+- src/components/LinuxProxyUnificationPanel.tsx
+- src/components/LinuxRuntimeStatePanel.tsx
+- src/components/LinuxControlActions.tsx
+- src/components/linuxConsoleViewModel.ts
+- src/components/linuxWorkbenchModel.ts
+- src/styles.css
+- src/styles/linux-workbench.css
+- server/control-panel.test.mjs
+- server/workbench-styles.test.mjs
+
+Return:
+- confirmed evidence, with file paths and line numbers;
+- findings ordered by severity, only when supported by current path:line evidence;
+- implementation-plan risks, including test fragility, component boundaries, or data-flow gaps;
+- stale claims or missing verification, especially browser-only visual layout gaps;
+- a Codex verification checklist.
+
+Rules:
+- Treat docs as hypotheses unless verified against current source or test files.
+- Do not report P0/P1/P2 labels for confirmations; reserve severity labels for defects.
+- Do not claim production readiness from local UI evidence alone.
+EOF
+}
+
+render_gemini_prompt() {
+  local lane="$1"
+  local task="$2"
+  case "${lane}" in
+    mac)
+      render_mac_gemini_prompt "${task}"
+      ;;
+    linux-workbench)
+      render_linux_workbench_gemini_prompt "${task}"
+      ;;
+    *)
+      die "unknown gemini lane: ${lane}"
+      ;;
+  esac
+}
+
+render_evidence_pack() {
+  local lane="$1"
+  local task="$2"
+  local generated_at
+  generated_at="$(date '+%Y-%m-%d %H:%M:%S %z')"
+  cat <<EOF
+# CGC Evidence Pack
+
+Task: ${task}
+Lane: ${lane}
+Generated: ${generated_at}
+
+## Collaboration Contract
+
+Gemini is a rough scanner and candidate reviewer only. Codex must verify every
+Gemini finding against current local source, tests, scripts, or command output
+before the finding becomes actionable.
+
+Reference mechanism:
+
+- docs/cgc/DEEP_COLLABORATION_MECHANISM.md
+
+## Safety Boundary
+
+Do not read or expose:
+
+- upstream proxy credentials;
+- encrypted profile ciphertext;
+- rendered runtime config;
+- private logs;
+- root-owned network state;
+- .env files, SSH keys, OAuth tokens, cookies, API keys, or auth strings.
+
+Do not run:
+
+- root VPN start/stop;
+- nftables apply/remove;
+- hotspot start;
+- package installers;
+- service-changing commands.
+
+## Source Of Truth Order
+
+1. Current user request.
+2. Live local command output.
+3. Current source and tests.
+4. Current docs and verification artifacts.
+5. Gemini or Claude output as candidate input only.
+
+## Codex Evidence To Collect
+
+Run or inspect before asking Gemini to review:
+
+\`\`\`bash
+git status --short
+git log --oneline -5
+cat package.json
+find src server scripts docs -maxdepth 2 -type f | sort
+scripts/cgc status --lane linux-workbench
+git diff --check
+\`\`\`
+
+Use service-running checks only when the task requires them:
+
+\`\`\`bash
+scripts/cgc status --lane linux-workbench --require-app-running
+scripts/cgc closeout --lane linux-workbench --task "${task}" --require-app-running --dry-run
+\`\`\`
+
+## Gemini Rough-Scan Brief
+
+Ask Gemini to return:
+
+- candidate findings only;
+- current \`path:line\` evidence for every important claim;
+- direct evidence separated from inference;
+- stale docs or over-claims;
+- missing verification gates;
+- a Codex-owned checklist.
+
+Gemini must not claim final readiness.
+
+## Codex Secondary Processing Table
+
+| Candidate | Gemini Evidence | Codex Line Check | Classification | Next Action |
+| --- | --- | --- | --- | --- |
+|  |  |  | accepted / rejected / needs-command / manual-gate |  |
+
+## Acceptance Rules
+
+- Accept only findings with correct current \`path:line\` evidence.
+- Reject wrong or approximate line citations.
+- Downgrade broad whole-repo claims unless local commands support them.
+- Convert accepted findings into one narrow implementation or verification step.
+- Keep final completion claims with Codex, not Gemini.
+
+## Lane Notes
+EOF
+
+  case "${lane}" in
+    mac)
+      cat <<'EOF'
+
+- Mac lane evidence should focus on `scripts/macvpn/*`, Mac verification docs,
+  and macOS package state.
+- Root VPN actions remain outside Gemini and outside default CGC closeout.
+EOF
+      ;;
+    linux-workbench)
+      cat <<'EOF'
+
+- Linux workbench evidence should focus on `src/App.tsx`,
+  `src/components/*`, `server/*.test.mjs`, `scripts/cgc`, and recent Linux
+  verification artifacts.
+- Browser/WebView checks remain manual or Playwright-gated evidence.
+EOF
+      ;;
+    project)
+      cat <<'EOF'
+
+- Project-wide evidence must be split by area before Gemini review:
+  frontend, server/API, runtime/agent, Tauri, packaging scripts, docs.
+- If Gemini returns broad claims without line evidence, treat the result as a
+  rough signal only and ask for a smaller follow-up review.
+EOF
+      ;;
+    *)
+      die "unknown evidence-pack lane: ${lane}"
+      ;;
+  esac
+}
+
+render_claude_brief() {
+  local title="$1"
+  local label="$2"
+  local task="$3"
+  local scope="$4"
+  local files="$5"
+  local tests="$6"
+  cat <<EOF
+# ${title}
+
+Task: ${task}
+Scope: ${scope}
+Files: ${files}
+Validation: ${tests}
+
+Rules:
+- You are not alone in the codebase. Do not revert unrelated edits.
+- Stay within the listed scope and files.
+- Do not read or expose upstream proxy credentials.
+- Do not run root start/stop unless the brief explicitly says so.
+- Treat findings as candidate hypotheses with path:line evidence.
+- Codex verification is required before any completion claim.
+
+Deliver:
+- concise plan or patch summary;
+- changed files, if any;
+- verification commands run or proposed;
+- residual risks.
+EOF
+}
+
+write_artifact() {
+  local subdir="$1"
+  local task="$2"
+  local content="$3"
+  local slug
+  slug="$(printf '%s' "${task}" | slugify)"
+  [[ -n "${slug}" ]] || slug="task"
+  local dir="${ROOT_DIR}/docs/cgc/${subdir}"
+  local path="${dir}/$(timestamp)-${slug}.md"
+  mkdir -p "${dir}"
+  printf '%s\n' "${content}" >"${path}"
+  printf 'wrote: %s\n' "${path#${ROOT_DIR}/}"
+}
+
+run_and_capture() {
+  local label="$1"
+  shift
+  printf '### %s\n' "${label}"
+  printf '$'
+  printf ' %q' "$@"
+  printf '\n'
+  "$@" 2>&1
+}
+
+linux_app_probe() {
+  node <<'EOF'
+const base = "http://127.0.0.1:4077";
+const endpoints = [
+  "/",
+  "/api/status",
+  "/api/actions",
+  "/api/linux/desktop-package",
+  "/api/linux/proxy-unification"
+];
+const timeoutMs = 5000;
+for (const endpoint of endpoints) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${base}${endpoint}`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+    const text = await response.text();
+    const summary = endpoint === "/" ? "html" : JSON.parse(text);
+    if (endpoint === "/api/status" && !summary.gatewayAgent) {
+      throw new Error("gatewayAgent status is missing from /api/status; start the 4077 service with GATEWAY_AGENT_V2=1 or hide v2 controls");
+    }
+    const payload = endpoint === "/"
+      ? { endpoint, ok: true, kind: summary }
+      : {
+          endpoint,
+          ok: true,
+          keys: Object.keys(summary).slice(0, 12),
+          gatewayAgentPresent: endpoint === "/api/status" ? Boolean(summary.gatewayAgent) : undefined,
+          gatewayAgentState: endpoint === "/api/status" ? summary.gatewayAgent?.state : undefined,
+          gatewayProfileSource: endpoint === "/api/status"
+            ? summary.gatewayAgent?.probes?.profileSource?.value
+            : undefined,
+          actionCount: endpoint === "/api/actions"
+            ? (Array.isArray(summary) ? summary.length : Array.isArray(summary.actions) ? summary.actions.length : 0)
+            : undefined,
+          launcherMode: endpoint === "/api/linux/desktop-package" ? summary.launcherMode : undefined,
+          proxyMode: endpoint === "/api/linux/proxy-unification" ? summary.mode : undefined,
+          optimizationPhase: endpoint === "/api/linux/proxy-unification"
+            ? summary.optimizationReadiness?.phase
+            : undefined,
+          dispatcherActive: endpoint === "/api/linux/proxy-unification"
+            ? summary.optimizationReadiness?.dispatcherActive
+            : undefined,
+          optimizationBlockers: endpoint === "/api/linux/proxy-unification"
+            ? summary.optimizationReadiness?.blockers
+            : undefined
+        };
+    console.log(JSON.stringify(payload));
+  } catch (error) {
+    clearTimeout(timer);
+    console.error(JSON.stringify({ endpoint, ok: false, error: error instanceof Error ? error.message : String(error) }));
+    process.exitCode = 1;
+  }
+}
+EOF
+}
+
+network_smoke_probe() {
+  local output
+  output="$(scripts/network/network-smoke.sh)"
+  printf '%s\n' "${output}"
+  node -e '
+let input = "";
+process.stdin.on("data", (chunk) => input += chunk);
+process.stdin.on("end", () => {
+  const data = JSON.parse(input);
+  if (!data.classification || data.classification.ok !== true) {
+    console.error(JSON.stringify({
+      ok: false,
+      blockers: data.classification?.blockers || ["missing-classification"]
+    }));
+    process.exit(1);
+  }
+});
+' <<<"${output}"
+}
+
+run_network_scan() {
+  local dry_run=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      *)
+        die "unknown network-scan argument: $1"
+        ;;
+    esac
+  done
+
+  if [[ "${dry_run}" == "1" ]]; then
+    cat <<'EOF'
+CGC network scan dry run
+- would run: scripts/network/network-smoke.sh
+- would run: ${HOME}/.local/bin/proxy-stack self-check --deep
+- would probe: /api/status and /api/linux/proxy-unification
+EOF
+    return 0
+  fi
+
+  (cd "${ROOT_DIR}" && run_and_capture "Network smoke" network_smoke_probe)
+  (cd "${ROOT_DIR}" && run_and_capture "Deep proxy-stack self-check" "${HOME}/.local/bin/proxy-stack" self-check --deep)
+  (cd "${ROOT_DIR}" && run_and_capture "Status endpoint" curl -fsS http://127.0.0.1:4077/api/status)
+  (cd "${ROOT_DIR}" && run_and_capture "Proxy unification endpoint" curl -fsS http://127.0.0.1:4077/api/linux/proxy-unification)
+}
+
+run_linux_workbench_status() {
+  local require_app="$1"
+  local dry_run="$2"
+
+  if [[ "${dry_run}" == "1" ]]; then
+    printf 'CGC Linux workbench status dry run\n'
+    printf 'would run: scripts/cgc-test.sh\n'
+    if [[ "${require_app}" == "1" ]]; then
+      printf 'would run: local HTTP endpoint probe for http://127.0.0.1:4077\n'
+    else
+      printf 'would skip: local HTTP endpoint probe unless --require-app-running is set\n'
+    fi
+    return 0
+  fi
+
+  (cd "${ROOT_DIR}" && scripts/cgc-test.sh)
+  if [[ "${require_app}" == "1" ]]; then
+    (cd "${ROOT_DIR}" && linux_app_probe)
+  else
+    printf 'Linux app endpoint probe: skipped (use --require-app-running)\n'
+  fi
+}
+
+run_linux_workbench_closeout() {
+  local task="$1"
+  local require_app="$2"
+  local allow_service_change="$3"
+  local dry_run="$4"
+
+  if [[ "${dry_run}" == "1" ]]; then
+    printf 'CGC Linux workbench closeout dry run\n'
+    printf 'task: %s\n' "${task}"
+    printf 'service changes: %s\n' "$([[ "${allow_service_change}" == "1" ]] && printf 'allowed by flag; root VPN still not started/stopped by CGC' || printf 'disallowed')"
+    printf 'would run: scripts/cgc-test.sh\n'
+    printf 'would run: npm test\n'
+    printf 'would run: npm run desktop:check\n'
+    printf 'would run: npm run desktop:verify:self-use\n'
+    printf 'would run: npm run desktop:smoke:self-use\n'
+    printf 'would run: scripts/cgc network-scan\n'
+    printf 'would run: git diff --check\n'
+    if [[ "${require_app}" == "1" ]]; then
+      printf 'would run: local HTTP endpoint probe for http://127.0.0.1:4077\n'
+    else
+      printf 'would skip: local HTTP endpoint probe unless --require-app-running is set\n'
+    fi
+    return 0
+  fi
+
+  local slug report_path status_output test_output desktop_check_output desktop_verify_output desktop_smoke_output network_output diff_output app_output
+  slug="$(printf '%s' "${task}" | slugify)"
+  [[ -n "${slug}" ]] || slug="task"
+  report_path="${ROOT_DIR}/docs/verification/CGC_LINUX_WORKBENCH_CLOSEOUT_$(timestamp)-${slug}.md"
+
+  status_output="$(cd "${ROOT_DIR}" && run_and_capture "CGC self-test" scripts/cgc-test.sh 2>&1)"
+  test_output="$(cd "${ROOT_DIR}" && run_and_capture "Project tests" npm test 2>&1)"
+  desktop_check_output="$(cd "${ROOT_DIR}" && run_and_capture "Desktop cargo check" npm run desktop:check 2>&1)"
+  desktop_verify_output="$(cd "${ROOT_DIR}" && run_and_capture "Installed desktop package verify" npm run desktop:verify:self-use 2>&1)"
+  desktop_smoke_output="$(cd "${ROOT_DIR}" && run_and_capture "Installed desktop package smoke" npm run desktop:smoke:self-use 2>&1)"
+  network_output="$(cd "${ROOT_DIR}" && run_and_capture "Network scan" scripts/cgc network-scan 2>&1)"
+  diff_output="$(cd "${ROOT_DIR}" && run_and_capture "Whitespace diff check" git diff --check 2>&1)"
+  if [[ "${require_app}" == "1" ]]; then
+    app_output="$(cd "${ROOT_DIR}" && run_and_capture "Local HTTP endpoint probe" linux_app_probe 2>&1)"
+  else
+    app_output="Linux app endpoint probe: skipped (use --require-app-running)"
+  fi
+
+  cat >"${report_path}" <<EOF
+# CGC Linux Workbench Closeout - ${task}
+
+## Safety
+
+service changes: $([[ "${allow_service_change}" == "1" ]] && printf 'allowed by flag; root VPN still not started/stopped by CGC' || printf 'disallowed')
+
+## CGC Self-Test
+
+\`\`\`text
+${status_output}
+\`\`\`
+
+## Project Tests
+
+\`\`\`text
+${test_output}
+\`\`\`
+
+## Desktop Cargo Check
+
+\`\`\`text
+${desktop_check_output}
+\`\`\`
+
+## Installed Desktop Package Verify
+
+\`\`\`text
+${desktop_verify_output}
+\`\`\`
+
+## Installed Desktop Package Smoke
+
+\`\`\`text
+${desktop_smoke_output}
+\`\`\`
+
+## Network Scan
+
+\`\`\`text
+${network_output}
+\`\`\`
+
+## Local HTTP Endpoint Probe
+
+\`\`\`text
+${app_output}
+\`\`\`
+
+## Whitespace Diff Check
+
+\`\`\`text
+${diff_output}
+\`\`\`
+
+## Codex Final Gate
+
+- This Linux lane runs live commands; documentation remains supporting evidence, not source of truth.
+- Root VPN, nftables apply/remove, hotspot start, and service-changing caution actions are not executed by CGC closeout.
+- Browser or WebView click-through evidence must still be collected separately when validating rendered UI behavior.
+EOF
+
+  printf 'wrote: %s\n' "${report_path#${ROOT_DIR}/}"
+}
+
+run_closeout() {
+  local task="" lane="mac" local_only=0 require_app=0 allow_service_change=0 dry_run=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --task)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--task requires a value"
+        task="$2"
+        shift 2
+        ;;
+      --lane)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--lane requires a value"
+        lane="$2"
+        shift 2
+        ;;
+      --local-only)
+        local_only=1
+        shift
+        ;;
+      --require-app-running)
+        require_app=1
+        shift
+        ;;
+      --allow-service-change)
+        allow_service_change=1
+        shift
+        ;;
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      *)
+        die "unknown closeout argument: $1"
+        ;;
+    esac
+  done
+
+  [[ -n "${task}" ]] || die "closeout requires --task"
+
+  case "${lane}" in
+    mac)
+      ;;
+    linux-workbench)
+      run_linux_workbench_closeout "${task}" "${require_app}" "${allow_service_change}" "${dry_run}"
+      return 0
+      ;;
+    *)
+      die "unknown closeout lane: ${lane}"
+      ;;
+  esac
+
+  if [[ "${dry_run}" == "1" ]]; then
+    printf 'CGC closeout dry run\n'
+    printf 'task: %s\n' "${task}"
+    if [[ "${allow_service_change}" == "1" ]]; then
+      printf 'service changes: allowed by flag, but closeout still does not start/stop root VPN\n'
+    else
+      printf 'service changes: disallowed\n'
+    fi
+    printf 'would run: scripts/macvpn/verify-macvpn-kit.sh\n'
+    if [[ "${local_only}" == "1" ]]; then
+      printf 'would skip: scripts/macvpn/verify-mac-desktop-state.sh (--local-only)\n'
+    elif [[ "${require_app}" == "1" ]]; then
+      printf 'would run: REQUIRE_APP_RUNNING=1 scripts/macvpn/verify-mac-desktop-state.sh\n'
+    else
+      printf 'would run: scripts/macvpn/verify-mac-desktop-state.sh\n'
+    fi
+    printf 'would write: docs/verification/CGC_CLOSEOUT_<timestamp>.md\n'
+    return 0
+  fi
+
+  local kit_output desktop_output desktop_status report_path slug
+  kit_output="$(cd "${ROOT_DIR}" && scripts/macvpn/verify-macvpn-kit.sh 2>&1)"
+  if [[ "${local_only}" == "1" ]]; then
+    desktop_output="Mac desktop state: skipped (--local-only)"
+    desktop_status=0
+  elif [[ "${require_app}" == "1" ]]; then
+    desktop_output="$(cd "${ROOT_DIR}" && REQUIRE_APP_RUNNING=1 scripts/macvpn/verify-mac-desktop-state.sh 2>&1)" || desktop_status=$?
+    desktop_status="${desktop_status:-0}"
+  else
+    desktop_output="$(cd "${ROOT_DIR}" && scripts/macvpn/verify-mac-desktop-state.sh 2>&1)" || desktop_status=$?
+    desktop_status="${desktop_status:-0}"
+  fi
+
+  slug="$(printf '%s' "${task}" | slugify)"
+  [[ -n "${slug}" ]] || slug="task"
+  report_path="${ROOT_DIR}/docs/verification/CGC_CLOSEOUT_$(timestamp)-${slug}.md"
+
+  cat >"${report_path}" <<EOF
+# CGC Closeout - ${task}
+
+## Safety
+
+service changes: $([[ "${allow_service_change}" == "1" ]] && printf 'allowed by flag; not used by this closeout' || printf 'disallowed')
+
+## Local Kit Verification
+
+\`\`\`text
+${kit_output}
+\`\`\`
+
+## Mac Desktop State Verification
+
+\`\`\`text
+${desktop_output}
+\`\`\`
+
+## Codex Final Gate
+
+- Existing evidence docs were reviewed by command output, not treated as live truth by themselves.
+- External reviewer prompts, if generated, are inputs only.
+- Codex verification remains required before publishing or claiming production readiness.
+EOF
+
+  printf 'wrote: %s\n' "${report_path#${ROOT_DIR}/}"
+  if [[ "${desktop_status}" != "0" ]]; then
+    return "${desktop_status}"
+  fi
+}
+
+run_gemini() {
+  local task="" lane="mac" dry_run=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --task)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--task requires a value"
+        task="$2"
+        shift 2
+        ;;
+      --lane)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--lane requires a value"
+        lane="$2"
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      *)
+        die "unknown gemini argument: $1"
+        ;;
+    esac
+  done
+  [[ -n "${task}" ]] || die "gemini requires --task"
+  local content
+  content="$(render_gemini_prompt "${lane}" "${task}")"
+  if [[ "${dry_run}" == "1" ]]; then
+    printf '%s\n' "${content}"
+  else
+    write_artifact "gemini" "${task}" "${content}"
+  fi
+}
+
+run_evidence_pack() {
+  local task="" lane="linux-workbench" dry_run=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --task)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--task requires a value"
+        task="$2"
+        shift 2
+        ;;
+      --lane)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--lane requires a value"
+        lane="$2"
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      *)
+        die "unknown evidence-pack argument: $1"
+        ;;
+    esac
+  done
+  [[ -n "${task}" ]] || die "evidence-pack requires --task"
+
+  local content
+  content="$(render_evidence_pack "${lane}" "${task}")"
+  if [[ "${dry_run}" == "1" ]]; then
+    printf '%s\n' "${content}"
+  else
+    write_artifact "evidence-packs" "${task}" "${content}"
+  fi
+}
+
+run_claude() {
+  local mode="$1"
+  shift
+  local task="" scope="" files="" tests="" dry_run=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --task)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--task requires a value"
+        task="$2"
+        shift 2
+        ;;
+      --scope)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--scope requires a value"
+        scope="$2"
+        shift 2
+        ;;
+      --files)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--files requires a value"
+        files="$2"
+        shift 2
+        ;;
+      --tests)
+        [[ $# -ge 2 && -n "${2:-}" ]] || die "--tests requires a value"
+        tests="$2"
+        shift 2
+        ;;
+      --dry-run)
+        dry_run=1
+        shift
+        ;;
+      *)
+        die "unknown ${mode} argument: $1"
+        ;;
+    esac
+  done
+  [[ -n "${task}" ]] || die "${mode} requires --task"
+  [[ -n "${scope}" ]] || die "${mode} requires --scope"
+  [[ -n "${files}" ]] || die "${mode} requires --files"
+  [[ -n "${tests}" ]] || die "${mode} requires --tests"
+
+  local title subdir content
+  if [[ "${mode}" == "claude-plan" ]]; then
+    title="Claude planning brief"
+    subdir="claude-plans"
+  else
+    title="Claude execution brief"
+    subdir="claude-briefs"
+  fi
+  content="$(render_claude_brief "${title}" "${mode}" "${task}" "${scope}" "${files}" "${tests}")"
+  if [[ "${dry_run}" == "1" ]]; then
+    printf '%s\n' "${content}"
+  else
+    write_artifact "${subdir}" "${task}" "${content}"
+  fi
+}
+
+main() {
+  local command="${1:-}"
+  case "${command}" in
+    -h|--help|help)
+      usage
+      ;;
+    status)
+      shift
+      local lane="mac" rest=()
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --lane)
+            [[ $# -ge 2 && -n "${2:-}" ]] || die "--lane requires a value"
+            lane="$2"
+            shift 2
+            ;;
+          *)
+            rest+=("$1")
+            shift
+            ;;
+        esac
+      done
+      case "${lane}" in
+        mac)
+          run_status "${rest[@]}"
+          ;;
+        linux-workbench)
+          local require_app=0 dry_run=0 arg
+          for arg in "${rest[@]}"; do
+            case "${arg}" in
+              --require-app-running)
+                require_app=1
+                ;;
+              --dry-run)
+                dry_run=1
+                ;;
+              --local-only)
+                ;;
+              *)
+                die "unknown status argument: ${arg}"
+                ;;
+            esac
+          done
+          run_linux_workbench_status "${require_app}" "${dry_run}"
+          ;;
+        *)
+          die "unknown status lane: ${lane}"
+          ;;
+      esac
+      ;;
+    closeout)
+      shift
+      run_closeout "$@"
+      ;;
+    gemini)
+      shift
+      run_gemini "$@"
+      ;;
+    evidence-pack)
+      shift
+      run_evidence_pack "$@"
+      ;;
+    claude-brief|claude-plan)
+      shift
+      run_claude "${command}" "$@"
+      ;;
+    network-scan)
+      shift
+      run_network_scan "$@"
+      ;;
+    self-test)
+      exec "${ROOT_DIR}/scripts/cgc-test.sh"
+      ;;
+    "")
+      usage
+      ;;
+    *)
+      die "unknown command: ${command}"
+      ;;
+  esac
+}
+
+main "$@"

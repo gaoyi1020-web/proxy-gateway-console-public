@@ -1,0 +1,331 @@
+name: iOS Signed IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      sing_box_ref:
+        description: "SagerNet/sing-box ref to build"
+        required: false
+        default: "stable"
+      apple_ref:
+        description: "SagerNet/sing-box-for-apple ref to build"
+        required: false
+        default: ""
+      scheme:
+        description: "Apple client scheme"
+        required: false
+        default: "SFI"
+      bundle_id_prefix:
+        description: "Bundle ID prefix registered in Apple Developer"
+        required: true
+        default: "io.nekohasekai.sfavt"
+      export_method:
+        description: "Xcode export method, for example debugging, development, ad-hoc, app-store"
+        required: false
+        default: "debugging"
+      xcode_path:
+        description: "Xcode developer directory"
+        required: false
+        default: "/Applications/Xcode_26.3.app/Contents/Developer"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  signed-ipa:
+    name: Build signed iOS IPA
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    env:
+      SING_BOX_REF: ${{ github.event.inputs.sing_box_ref || 'stable' }}
+      APPLE_REF: ${{ github.event.inputs.apple_ref || '' }}
+      SFI_SCHEME: ${{ github.event.inputs.scheme || 'SFI' }}
+      BUNDLE_ID_PREFIX: ${{ github.event.inputs.bundle_id_prefix }}
+      EXPORT_METHOD: ${{ github.event.inputs.export_method || 'debugging' }}
+      XCODE_PATH: ${{ github.event.inputs.xcode_path || '/Applications/Xcode_26.3.app/Contents/Developer' }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY_P8_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8_BASE64 }}
+      IOS_SIGNING_CERT_P12_BASE64: ${{ secrets.IOS_SIGNING_CERT_P12_BASE64 }}
+      IOS_SIGNING_CERT_PASSWORD: ${{ secrets.IOS_SIGNING_CERT_PASSWORD }}
+      IOS_PROFILES_ZIP_BASE64: ${{ secrets.IOS_PROFILES_ZIP_BASE64 }}
+
+    steps:
+      - name: Checkout control repo
+        uses: actions/checkout@v6
+
+      - name: Validate signing inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            APPLE_TEAM_ID \
+            APP_STORE_CONNECT_KEY_ID \
+            APP_STORE_CONNECT_ISSUER_ID \
+            APP_STORE_CONNECT_API_KEY_P8_BASE64 \
+            IOS_SIGNING_CERT_P12_BASE64 \
+            IOS_SIGNING_CERT_PASSWORD
+          do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required GitHub secret: ${name}"
+              missing=1
+            fi
+          done
+          if [[ "${BUNDLE_ID_PREFIX}" == "io.nekohasekai.sfavt" ]]; then
+            echo "::warning::Using upstream bundle id prefix. This only works if your Apple Developer account owns those App IDs."
+          fi
+          exit "${missing}"
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -1d /Applications/Xcode*.app
+          sudo xcode-select -s "${XCODE_PATH}"
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.24.x"
+
+      - name: Install build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v xcbeautify >/dev/null 2>&1; then
+            brew install xcbeautify
+          fi
+          xcbeautify --version
+          go version
+
+      - name: Configure signing keychain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          decode_base64() {
+            if base64 --help 2>&1 | grep -q -- "--decode"; then
+              base64 --decode
+            else
+              base64 -D
+            fi
+          }
+
+          keychain_password="$(uuidgen)"
+          keychain_path="${RUNNER_TEMP}/ios-signing.keychain-db"
+          cert_path="${RUNNER_TEMP}/ios-signing.p12"
+          api_key_path="${RUNNER_TEMP}/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+
+          printf '%s' "${IOS_SIGNING_CERT_P12_BASE64}" | decode_base64 > "${cert_path}"
+          printf '%s' "${APP_STORE_CONNECT_API_KEY_P8_BASE64}" | decode_base64 > "${api_key_path}"
+
+          security create-keychain -p "${keychain_password}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+          security import "${cert_path}" \
+            -k "${keychain_path}" \
+            -P "${IOS_SIGNING_CERT_PASSWORD}" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "${keychain_password}" \
+            "${keychain_path}"
+          security list-keychains -d user -s "${keychain_path}"
+          security find-identity -v -p codesigning "${keychain_path}"
+
+          echo "ASC_KEY_PATH=${api_key_path}" >> "${GITHUB_ENV}"
+
+      - name: Install optional provisioning profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${IOS_PROFILES_ZIP_BASE64}" ]]; then
+            echo "No optional provisioning profile zip configured."
+            exit 0
+          fi
+
+          decode_base64() {
+            if base64 --help 2>&1 | grep -q -- "--decode"; then
+              base64 --decode
+            else
+              base64 -D
+            fi
+          }
+
+          profiles_zip="${RUNNER_TEMP}/profiles.zip"
+          profiles_dir="${RUNNER_TEMP}/profiles"
+          install_dir="${HOME}/Library/MobileDevice/Provisioning Profiles"
+
+          mkdir -p "${profiles_dir}" "${install_dir}"
+          printf '%s' "${IOS_PROFILES_ZIP_BASE64}" | decode_base64 > "${profiles_zip}"
+          unzip -q "${profiles_zip}" -d "${profiles_dir}"
+
+          shopt -s nullglob
+          for profile in "${profiles_dir}"/*.mobileprovision; do
+            uuid="$(security cms -D -i "${profile}" | /usr/libexec/PlistBuddy -c 'Print UUID' /dev/stdin)"
+            cp "${profile}" "${install_dir}/${uuid}.mobileprovision"
+            echo "Installed provisioning profile ${uuid}"
+          done
+
+      - name: Clone upstream candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/sing-box-ios-candidate"
+          cd "${RUNNER_TEMP}/sing-box-ios-candidate"
+
+          git clone --depth 1 --branch "${SING_BOX_REF}" https://github.com/SagerNet/sing-box.git sing-box
+
+          if [[ -n "${APPLE_REF}" ]]; then
+            git clone --depth 1 --branch "${APPLE_REF}" https://github.com/SagerNet/sing-box-for-apple.git sing-box-for-apple
+          else
+            apple_commit="$(git -C sing-box submodule status clients/apple | awk '{print $1}' | sed 's/^-//')"
+            git clone https://github.com/SagerNet/sing-box-for-apple.git sing-box-for-apple
+            git -C sing-box-for-apple fetch --depth 1 origin "${apple_commit}"
+            git -C sing-box-for-apple checkout "${apple_commit}"
+          fi
+
+          git -C sing-box-for-apple submodule update --init --recursive --depth 1
+
+          echo "SING_BOX_PATH=${RUNNER_TEMP}/sing-box-ios-candidate/sing-box" >> "${GITHUB_ENV}"
+          echo "APPLE_PATH=${RUNNER_TEMP}/sing-box-ios-candidate/sing-box-for-apple" >> "${GITHUB_ENV}"
+          git -C sing-box log -1 --oneline
+          git -C sing-box-for-apple log -1 --oneline
+
+      - name: Patch bundle identifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${APPLE_PATH}"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          old = "io.nekohasekai.sfavt"
+          new = os.environ["BUNDLE_ID_PREFIX"].strip()
+          if not new or " " in new or new.startswith(".") or new.endswith("."):
+              raise SystemExit(f"Invalid BUNDLE_ID_PREFIX: {new!r}")
+
+          changed = []
+          for path in Path(".").rglob("*"):
+              if ".git" in path.parts or not path.is_file():
+                  continue
+              try:
+                  text = path.read_text()
+              except UnicodeDecodeError:
+                  continue
+              replaced = text.replace(old, new)
+              if replaced != text:
+                  path.write_text(replaced)
+                  changed.append(str(path))
+
+          print(f"Patched bundle prefix {old} -> {new}")
+          for item in changed:
+              print(item)
+          PY
+          rg -n "${BUNDLE_ID_PREFIX}|group\\.${BUNDLE_ID_PREFIX}|iCloud\\.${BUNDLE_ID_PREFIX}" \
+            SFI Extension IntentsExtension FileProviderExtension WidgetExtension sing-box.xcodeproj/project.pbxproj
+
+      - name: Build Libbox.xcframework
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C "${SING_BOX_PATH}" lib_install
+          make -C "${SING_BOX_PATH}" lib_apple
+          test -d "${APPLE_PATH}/Libbox.xcframework"
+
+      - name: Resolve Swift packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${APPLE_PATH}"
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project sing-box.xcodeproj \
+            -scheme "${SFI_SCHEME}" \
+            -skipPackagePluginValidation \
+            -skipMacroValidation
+
+      - name: Archive signed iOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${APPLE_PATH}"
+          archive_path="${RUNNER_TEMP}/sing-box-SFI.xcarchive"
+          xcodebuild archive \
+            -project sing-box.xcodeproj \
+            -scheme "${SFI_SCHEME}" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "${archive_path}" \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${ASC_KEY_PATH}" \
+            -authenticationKeyID "${APP_STORE_CONNECT_KEY_ID}" \
+            -authenticationKeyIssuerID "${APP_STORE_CONNECT_ISSUER_ID}" \
+            DEVELOPMENT_TEAM="${APPLE_TEAM_ID}" \
+            CODE_SIGN_STYLE=Automatic \
+            | xcbeautify
+          echo "ARCHIVE_PATH=${archive_path}" >> "${GITHUB_ENV}"
+
+      - name: Export signed IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_dir="${RUNNER_TEMP}/ipa-export"
+          export_options="${RUNNER_TEMP}/ExportOptions.plist"
+          mkdir -p "${export_dir}"
+          export EXPORT_OPTIONS_PLIST="${export_options}"
+
+          python3 - <<'PY'
+          import os
+          import plistlib
+
+          export_options = os.environ["EXPORT_OPTIONS_PLIST"]
+          plist = {
+              "destination": "export",
+              "method": os.environ["EXPORT_METHOD"],
+              "signingStyle": "automatic",
+              "teamID": os.environ["APPLE_TEAM_ID"],
+              "stripSwiftSymbols": True,
+          }
+          with open(export_options, "wb") as handle:
+              plistlib.dump(plist, handle)
+          PY
+          plutil -p "${export_options}"
+
+          xcodebuild -exportArchive \
+            -archivePath "${ARCHIVE_PATH}" \
+            -exportPath "${export_dir}" \
+            -exportOptionsPlist "${export_options}" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${ASC_KEY_PATH}" \
+            -authenticationKeyID "${APP_STORE_CONNECT_KEY_ID}" \
+            -authenticationKeyIssuerID "${APP_STORE_CONNECT_ISSUER_ID}" \
+            | xcbeautify
+
+          find "${export_dir}" -maxdepth 2 -type f -print
+          echo "IPA_EXPORT_DIR=${export_dir}" >> "${GITHUB_ENV}"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: sing-box-ios-${{ github.run_id }}
+          path: |
+            ${{ env.IPA_EXPORT_DIR }}/*.ipa
+            ${{ env.IPA_EXPORT_DIR }}/*.plist
+          if-no-files-found: error
+          retention-days: 7
